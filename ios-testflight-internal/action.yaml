@@ -1,19 +1,42 @@
-# Sub-action: ios-testflight-internal
-# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — ios-testflight-internal (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Sub-action: ios-testflight-internal — Stage 1 (TF Internal)
+# Lifted from openMF/mifos-x-actionhub-publish-ios-on-appstore-testflight@v1.0.14
+name: 'KMP Publish Apple — iOS TestFlight Internal (Stage 1)'
+description: 'Build signed IPA + upload to TestFlight. Internal testers see it immediately.'
 author: 'Mifos Initiative'
+branding: { icon: 'upload', color: 'blue' }
+
+inputs:
+  ios_package_name:      { required: true, description: 'iOS module name' }
+  shared_module:         { required: true, description: 'KMP shared module path' }
+  use_cocoapods:         { required: false, default: 'false', description: 'Install CocoaPods' }
+  appstore_key_id:       { required: true, description: 'ASC API key ID' }
+  appstore_issuer_id:    { required: true, description: 'ASC issuer ID' }
+  appstore_auth_key:     { required: true, description: 'Base64 .p8' }
+  match_password:        { required: true, description: 'Match passphrase' }
+  match_git_private_key: { required: true, description: 'SSH key for Match repo' }
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with: { bundler-cache: true }
+
+    - name: Materialize Apple secrets
       shell: bash
-      run: |
-        echo "::error::Sub-action ios-testflight-internal is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+      env:
+        APPSTORE_AUTH_KEY_B64: ${{ inputs.appstore_auth_key }}
+        MATCH_GIT_PRIVATE_KEY: ${{ inputs.match_git_private_key }}
+      run: bash "$GITHUB_ACTION_PATH/../_shared/scripts/materialize-apple-secrets.sh"
+
+    - name: Upload to TestFlight
+      shell: bash
+      env:
+        MATCH_PASSWORD:     ${{ inputs.match_password }}
+        APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
+      run: bundle exec fastlane ios beta
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -rf secrets

@@ -1,19 +1,83 @@
-# Sub-action: ios-build
+# Sub-action: ios-build — Build iOS IPA (debug unsigned OR release signed)
 # Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — ios-build (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Lifted from openMF/mifos-x-actionhub-build-ios-app@v1.0.14.
+name: 'KMP Publish Apple — iOS Build'
+description: 'Build iOS IPA. Debug builds skip code signing; Release uses Fastlane Match.'
 author: 'Mifos Initiative'
+branding: { icon: 'package', color: 'blue' }
+
+inputs:
+  ios_package_name:    { required: true,  description: 'iOS module name (e.g. cmp-ios)' }
+  shared_module:       { required: true,  description: 'KMP shared module (e.g. cmp-shared)' }
+  build_type:          { required: false, default: 'Release', description: "Debug | Release" }
+  use_cocoapods:       { required: false, default: 'false',   description: 'Install CocoaPods' }
+  xcode-version:       { required: false, default: '15.2',    description: 'Xcode version' }
+  java-version:        { required: false, default: '17',      description: 'JDK version' }
+  appstore_key_id:     { required: false, description: 'ASC API key ID (Release only)' }
+  appstore_issuer_id:  { required: false, description: 'ASC issuer ID (Release only)' }
+  appstore_auth_key:   { required: false, description: 'Base64 .p8 (Release only)' }
+  match_password:      { required: false, description: 'Match passphrase (Release only)' }
+  match_git_private_key: { required: false, description: 'SSH key for Match repo (Release only)' }
+
+outputs:
+  ipa_path:
+    description: 'Path to built IPA'
+    value: ${{ steps.locate.outputs.ipa_path }}
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: actions/setup-java@v4
+      with: { distribution: zulu, java-version: '${{ inputs.java-version }}' }
+    - uses: maxim-lobanov/setup-xcode@v1
+      with: { xcode-version: '${{ inputs.xcode-version }}' }
+    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with: { bundler-cache: true }
+
+    - name: Install CocoaPods (optional)
+      if: ${{ inputs.use_cocoapods == 'true' }}
       shell: bash
       run: |
-        echo "::error::Sub-action ios-build is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+        gem install cocoapods -N
+        cd "${{ inputs.ios_package_name }}" && pod install --repo-update
+
+    - name: Materialize Apple secrets (Release only)
+      if: ${{ inputs.build_type == 'Release' }}
+      shell: bash
+      env:
+        APPSTORE_AUTH_KEY_B64: ${{ inputs.appstore_auth_key }}
+        MATCH_GIT_PRIVATE_KEY: ${{ inputs.match_git_private_key }}
+      run: bash "$GITHUB_ACTION_PATH/../_shared/scripts/materialize-apple-secrets.sh"
+
+    - name: Build IPA (Release)
+      if: ${{ inputs.build_type == 'Release' }}
+      shell: bash
+      env:
+        MATCH_PASSWORD:     ${{ inputs.match_password }}
+        APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
+      run: bundle exec fastlane ios build_signed_ios
+
+    - name: Build IPA (Debug — unsigned)
+      if: ${{ inputs.build_type == 'Debug' }}
+      shell: bash
+      run: bundle exec fastlane ios build_ios
+
+    - name: Locate IPA
+      id: locate
+      shell: bash
+      run: |
+        IPA=$(find "${{ inputs.ios_package_name }}/build" -name '*.ipa' -type f | head -1 || true)
+        echo "ipa_path=$IPA" >> "$GITHUB_OUTPUT"
+
+    - name: Upload artifact
+      if: ${{ steps.locate.outputs.ipa_path != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-${{ inputs.build_type }}-ipa
+        path: ${{ steps.locate.outputs.ipa_path }}
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -rf secrets

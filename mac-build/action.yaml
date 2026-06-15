@@ -1,19 +1,52 @@
-# Sub-action: mac-build
+# Sub-action: mac-build — Compose Desktop macOS app bundle build (unsigned)
 # Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — mac-build (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# NEW — was inline in legacy macOS testflight/appstore actions; extracted as
+# its own subdir so downstream sub-actions (testflight/app-store/dmg-notarized)
+# can call it via outputs.
+name: 'KMP Publish Apple — Mac Build (Compose Desktop, unsigned)'
+description: 'Build Compose Desktop macOS .app bundle (unsigned). Output consumed by downstream sub-actions.'
 author: 'Mifos Initiative'
+branding: { icon: 'package', color: 'blue' }
+
+inputs:
+  desktop_package_name: { required: true,  description: 'Desktop module name (e.g. cmp-desktop)' }
+  flavor:               { required: false, default: 'prod', description: 'Gradle flavor dimension' }
+  java-version:         { required: false, default: '17',   description: 'JDK version' }
+
+outputs:
+  app_path:
+    description: 'Path to built .app bundle'
+    value: ${{ steps.locate.outputs.app_path }}
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: actions/setup-java@v4
+      with: { distribution: zulu, java-version: '${{ inputs.java-version }}' }
+
+    - name: Build unsigned .app
       shell: bash
+      env: { FLAVOR: '${{ inputs.flavor }}', PKG: '${{ inputs.desktop_package_name }}' }
       run: |
-        echo "::error::Sub-action mac-build is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+        # Unset signing env so Compose Desktop produces unsigned .app
+        unset MAC_SIGNING_IDENTITY MAC_KEYCHAIN_PATH MAC_PROVISIONING_PROFILE_PATH || true
+        ./gradlew ":$PKG:createReleaseDistributable" \
+          "-PflavorDimension=$FLAVOR" \
+          --no-daemon --no-configuration-cache
+
+    - name: Locate .app bundle
+      id: locate
+      shell: bash
+      env: { PKG: '${{ inputs.desktop_package_name }}' }
+      run: |
+        APP=$(find "$PKG/build/compose/binaries/main-release/app" -maxdepth 2 -name '*.app' -type d | head -1)
+        echo "app_path=$APP" >> "$GITHUB_OUTPUT"
+
+    - name: Patch LSMinimumSystemVersion (arm64-only requires >= 12.0)
+      shell: bash
+      env: { APP_PATH: '${{ steps.locate.outputs.app_path }}' }
+      run: |
+        INFO="$APP_PATH/Contents/Info.plist"
+        if [[ -f "$INFO" ]]; then
+          /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 12.0' "$INFO" || true
+        fi

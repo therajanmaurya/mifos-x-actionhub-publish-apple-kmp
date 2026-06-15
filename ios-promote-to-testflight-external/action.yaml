@@ -1,19 +1,40 @@
-# Sub-action: ios-promote-to-testflight-external
-# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — ios-promote-to-testflight-external (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Sub-action: ios-promote-to-testflight-external — Stage 2 (TF Internal → External)
+# 🆕 NEW. Triggers Apple beta review (~24h). No rebuild.
+# Consumer Fastfile lane: ios promoteToExternalBeta
+name: 'KMP Publish Apple — iOS Promote to TF External (Stage 2)'
+description: 'Distribute existing TF build to external testers via Fastlane pilot(distribute_only). No rebuild.'
 author: 'Mifos Initiative'
+branding: { icon: 'users', color: 'yellow' }
+
+inputs:
+  ios_package_name:   { required: true,  description: 'iOS module name' }
+  appstore_key_id:    { required: true,  description: 'ASC API key ID' }
+  appstore_issuer_id: { required: true,  description: 'ASC issuer ID' }
+  appstore_auth_key:  { required: true,  description: 'Base64 .p8' }
+  build_number:       { required: false, default: '',           description: 'Explicit TF build to promote. Default: latest.' }
+  external_groups:    { required: false, default: 'External Beta', description: 'Comma-separated TF external groups' }
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with: { bundler-cache: true }
+
+    - name: Materialize ASC API key
       shell: bash
-      run: |
-        echo "::error::Sub-action ios-promote-to-testflight-external is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+      env: { APPSTORE_AUTH_KEY_B64: '${{ inputs.appstore_auth_key }}' }
+      run: bash "$GITHUB_ACTION_PATH/../_shared/scripts/setup-asc-api.sh"
+
+    - name: Promote TF Internal → External
+      shell: bash
+      env:
+        APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
+        BUILD_NUMBER:       ${{ inputs.build_number }}
+        EXTERNAL_GROUPS:    ${{ inputs.external_groups }}
+      run: bundle exec fastlane ios promoteToExternalBeta
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -rf secrets

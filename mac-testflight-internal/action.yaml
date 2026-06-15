@@ -1,19 +1,66 @@
-# Sub-action: mac-testflight-internal
-# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — mac-testflight-internal (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Sub-action: mac-testflight-internal — MAS Stage 1
+# Lifted from openMF/mifos-x-actionhub-publish-macos-on-appstore-testflight-kmp@v1.0.14
+name: 'KMP Publish Apple — Mac TestFlight Internal (MAS Stage 1)'
+description: 'Build, sign, and upload macOS app to TestFlight.'
 author: 'Mifos Initiative'
+branding: { icon: 'upload', color: 'blue' }
+
+inputs:
+  desktop_package_name:                { required: true, description: 'Desktop module name' }
+  bundle_identifier:                   { required: true, description: 'macOS bundle ID' }
+  appstore_key_id:                     { required: true, description: 'ASC API key ID' }
+  appstore_issuer_id:                  { required: true, description: 'ASC issuer ID' }
+  appstore_auth_key:                   { required: true, description: 'Base64 .p8' }
+  mac_signing_certificate:             { required: true, description: 'Base64 macOS App Distribution .p12' }
+  mac_signing_certificate_password:    { required: true, description: 'Cert password' }
+  mac_installer_certificate:           { required: true, description: 'Base64 Mac Installer Distribution .p12' }
+  mac_installer_certificate_password:  { required: true, description: 'Installer cert password' }
+  mac_provisioning_profile_base64:     { required: true, description: 'Base64 .provisionprofile' }
+  keychain_password:                   { required: true, description: 'Temporary keychain password' }
+  match_git_private_key:               { required: false, description: 'SSH key for Match repo (optional — kept for parity)' }
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with: { bundler-cache: true }
+
+    - name: Create keychain + import certs + provisioning profile
+      shell: bash
+      env:
+        SIGN_CERT_B64:         ${{ inputs.mac_signing_certificate }}
+        INSTALLER_CERT_B64:    ${{ inputs.mac_installer_certificate }}
+        PROFILE_B64:           ${{ inputs.mac_provisioning_profile_base64 }}
+        APPSTORE_AUTH_KEY_B64: ${{ inputs.appstore_auth_key }}
+        MATCH_GIT_PRIVATE_KEY: ${{ inputs.match_git_private_key }}
+        KEYCHAIN_PASSWORD:     ${{ inputs.keychain_password }}
+        SIGN_PASS:             ${{ inputs.mac_signing_certificate_password }}
+        INSTALLER_PASS:        ${{ inputs.mac_installer_certificate_password }}
+      run: |
+        set -euo pipefail
+        mkdir -p secrets ~/Library/MobileDevice/Provisioning\ Profiles
+        echo "$APPSTORE_AUTH_KEY_B64" | base64 --decode > secrets/AuthKey.p8
+        echo "$SIGN_CERT_B64"      | base64 --decode > secrets/mac_signing.p12
+        echo "$INSTALLER_CERT_B64" | base64 --decode > secrets/mac_installer.p12
+        echo "$PROFILE_B64"        | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/macos.provisionprofile
+        security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+        security import secrets/mac_signing.p12    -k build.keychain -P "$SIGN_PASS"      -T /usr/bin/codesign
+        security import secrets/mac_installer.p12  -k build.keychain -P "$INSTALLER_PASS" -T /usr/bin/productsign
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+    - name: Build + upload to TestFlight
+      shell: bash
+      env:
+        APPSTORE_KEY_ID:       ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID:    ${{ inputs.appstore_issuer_id }}
+        MATCH_GIT_PRIVATE_KEY: ${{ inputs.match_git_private_key }}
+      run: bundle exec fastlane mac desktop_testflight
+
+    - name: Cleanup
+      if: always()
       shell: bash
       run: |
-        echo "::error::Sub-action mac-testflight-internal is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+        rm -rf secrets
+        security delete-keychain build.keychain || true

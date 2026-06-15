@@ -1,19 +1,40 @@
-# Sub-action: mac-promote-to-app-store
-# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — mac-promote-to-app-store (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Sub-action: mac-promote-to-app-store — MAS Stage 3 (no rebuild)
+# 🆕 NEW preferred Stage 3 path for macOS.
+# Consumer Fastfile lane: mac promoteMacToAppStore
+name: 'KMP Publish Apple — Mac Promote TF → App Store (MAS Stage 3 — no rebuild)'
+description: 'Submit existing Mac TF build to Mac App Store review. No rebuild.'
 author: 'Mifos Initiative'
+branding: { icon: 'check-circle', color: 'red' }
+
+inputs:
+  desktop_package_name: { required: true,  description: 'Desktop module name' }
+  bundle_identifier:    { required: true,  description: 'macOS bundle ID' }
+  appstore_key_id:      { required: true,  description: 'ASC API key ID' }
+  appstore_issuer_id:   { required: true,  description: 'ASC issuer ID' }
+  appstore_auth_key:    { required: true,  description: 'Base64 .p8' }
+  build_number:         { required: false, default: '', description: 'Explicit Mac TF build. Default: latest.' }
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with: { bundler-cache: true }
+
+    - name: Materialize ASC API key
       shell: bash
-      run: |
-        echo "::error::Sub-action mac-promote-to-app-store is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+      env: { APPSTORE_AUTH_KEY_B64: '${{ inputs.appstore_auth_key }}' }
+      run: bash "$GITHUB_ACTION_PATH/../_shared/scripts/setup-asc-api.sh"
+
+    - name: Promote Mac TF → Mac App Store
+      shell: bash
+      env:
+        APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
+        BUILD_NUMBER:       ${{ inputs.build_number }}
+        MAC_APP_IDENTIFIER: ${{ inputs.bundle_identifier }}
+      run: bundle exec fastlane mac promoteMacToAppStore
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -rf secrets

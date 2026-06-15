@@ -1,19 +1,54 @@
-# Sub-action: ios-firebase-distribution
-# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — ios-firebase-distribution (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Sub-action: ios-firebase-distribution — Stage 0 dev/QA
+# Lifted from openMF/mifos-x-actionhub-publish-ios-on-firebase@v1.0.14
+name: 'KMP Publish Apple — iOS Firebase Distribution (Stage 0)'
+description: 'Build signed IPA + upload to Firebase App Distribution.'
 author: 'Mifos Initiative'
+branding: { icon: 'send', color: 'orange' }
+
+inputs:
+  ios_package_name:      { required: true, description: 'iOS module name' }
+  shared_module:         { required: true, description: 'KMP shared module path' }
+  use_cocoapods:         { required: false, default: 'false', description: 'Install CocoaPods' }
+  appstore_key_id:       { required: true, description: 'ASC API key ID' }
+  appstore_issuer_id:    { required: true, description: 'ASC issuer ID' }
+  appstore_auth_key:     { required: true, description: 'Base64 .p8' }
+  match_password:        { required: true, description: 'Match passphrase' }
+  match_git_private_key: { required: true, description: 'SSH key for Match repo' }
+  firebase_creds:        { required: true, description: 'Base64 Firebase SA JSON' }
+  tester_groups:         { required: true, description: 'Comma-separated Firebase tester groups' }
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with: { bundler-cache: true }
+
+    - name: Install Fastlane plugins
       shell: bash
-      run: |
-        echo "::error::Sub-action ios-firebase-distribution is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+      run: fastlane add_plugin firebase_app_distribution --version=1.0.0
+
+    - name: Materialize Apple secrets + Firebase creds
+      shell: bash
+      env:
+        APPSTORE_AUTH_KEY_B64: ${{ inputs.appstore_auth_key }}
+        MATCH_GIT_PRIVATE_KEY: ${{ inputs.match_git_private_key }}
+        FIREBASE_CREDS_B64:    ${{ inputs.firebase_creds }}
+      run: bash "$GITHUB_ACTION_PATH/../_shared/scripts/materialize-apple-secrets.sh" --firebase
+
+    - name: Deploy to Firebase
+      shell: bash
+      env:
+        MATCH_PASSWORD:     ${{ inputs.match_password }}
+        APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
+        FIREBASE_GROUPS:    ${{ inputs.tester_groups }}
+      run: bundle exec fastlane ios deploy_on_firebase
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -rf secrets
+
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v4
+      with: { name: firebase-ios-ipa, path: '**/build/**/*.ipa' }

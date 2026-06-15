@@ -1,19 +1,64 @@
-# Sub-action: mac-dmg-notarized
-# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
+# Sub-action: mac-dmg-notarized — Direct distribution via Developer ID + notarytool
+# 🆕 NEW. Match-managed Developer ID Application cert + Fastlane notarize action.
 #
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
+# Reference impl lifted from kmp-project-template/deployment/desktop/dmg-notarized/lane.rb
+# (written during the actionhub-constellation-consolidation session).
 #
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — mac-dmg-notarized (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Consumer Fastfile lane: mac buildNotarizedMacDmg
+#   The lane handles: Match cert install → Gradle build (createReleaseDistributable) →
+#   codesign with hardened runtime + entitlements → hdiutil wrap as DMG →
+#   Fastlane notarize action (calls notarytool + staples) → gh release upload + flag flip.
+name: 'KMP Publish Apple — Mac DMG Notarized (Developer ID + notarytool)'
+description: 'Build, sign with Match-managed Developer ID cert, notarize via Apple notarytool, staple, and upload to GitHub Release.'
 author: 'Mifos Initiative'
+branding: { icon: 'check-circle', color: 'purple' }
+
+inputs:
+  desktop_package_name:  { required: true,  description: 'Desktop module name' }
+  mac_app_identifier:    { required: true,  description: 'macOS bundle ID' }
+  flavor:                { required: false, default: 'prod', description: 'Gradle flavor' }
+  github_tag:            { required: true,  description: 'GH Release tag (must already exist)' }
+  stage:                 { required: false, default: 'stable', description: 'GH Release stage: prerelease | beta | stable' }
+  appstore_key_id:       { required: true,  description: 'ASC API key ID (for Match + notarize)' }
+  appstore_issuer_id:    { required: true,  description: 'ASC issuer ID' }
+  appstore_auth_key:     { required: true,  description: 'Base64 .p8' }
+  match_password:        { required: true,  description: 'Match passphrase' }
+  match_git_private_key: { required: true,  description: 'SSH key for Match repo (contains Developer ID cert)' }
+  ad_hoc:                { required: false, default: 'false', description: 'Set true to skip Match + notarize (dev only)' }
+  java-version:          { required: false, default: '17',    description: 'JDK version' }
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: actions/setup-java@v4
+      with: { distribution: zulu, java-version: '${{ inputs.java-version }}' }
+
+    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with: { bundler-cache: true }
+
+    - name: Materialize Apple secrets (Match SSH + ASC API key)
       shell: bash
-      run: |
-        echo "::error::Sub-action mac-dmg-notarized is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+      env:
+        APPSTORE_AUTH_KEY_B64: ${{ inputs.appstore_auth_key }}
+        MATCH_GIT_PRIVATE_KEY: ${{ inputs.match_git_private_key }}
+      run: bash "$GITHUB_ACTION_PATH/../_shared/scripts/materialize-apple-secrets.sh"
+
+    - name: Build + sign + notarize + staple + upload (via Fastlane)
+      shell: bash
+      env:
+        MATCH_PASSWORD:        ${{ inputs.match_password }}
+        APPSTORE_KEY_ID:       ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID:    ${{ inputs.appstore_issuer_id }}
+        MAC_APP_IDENTIFIER:    ${{ inputs.mac_app_identifier }}
+        FLAVOR:                ${{ inputs.flavor }}
+        GIT_TAG:               ${{ inputs.github_tag }}
+        STAGE:                 ${{ inputs.stage }}
+        AD_HOC_SIGNING:        ${{ inputs.ad_hoc == 'true' && '1' || '0' }}
+        GH_TOKEN:              ${{ github.token }}
+        GITHUB_REPOSITORY:     ${{ github.repository }}
+      run: bundle exec fastlane mac buildNotarizedMacDmg
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -rf secrets

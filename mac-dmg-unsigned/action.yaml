@@ -1,19 +1,52 @@
-# Sub-action: mac-dmg-unsigned
-# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
-#
-# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
-# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
-#
-# Lift source documented in this repo's CHANGELOG.md.
-name: 'mifos-x-actionhub-publish-apple-kmp — mac-dmg-unsigned (TODO)'
-description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+# Sub-action: mac-dmg-unsigned — Ad-hoc signed DMG (dev only)
+# 🆕 NEW. For trusted-device dev builds — skips Match + notarytool entirely.
+# Users will see a Gatekeeper warning; for production, use mac-dmg-notarized.
+name: 'KMP Publish Apple — Mac DMG Unsigned (dev only)'
+description: 'Build macOS DMG with ad-hoc codesign. No Match, no notarytool. Dev-builds only — Gatekeeper warning on user devices.'
 author: 'Mifos Initiative'
+branding: { icon: 'package', color: 'gray' }
+
+inputs:
+  desktop_package_name: { required: true,  description: 'Desktop module name' }
+  flavor:               { required: false, default: 'prod', description: 'Gradle flavor' }
+  github_tag:           { required: false, default: '',     description: 'GH Release tag (optional; if set, uploads to release)' }
+  java-version:         { required: false, default: '17',   description: 'JDK version' }
+
+outputs:
+  dmg_path:
+    description: 'Path to built DMG'
+    value: ${{ steps.locate.outputs.dmg_path }}
+
 runs:
   using: 'composite'
   steps:
-    - name: TODO — implement
+    - uses: actions/setup-java@v4
+      with: { distribution: zulu, java-version: '${{ inputs.java-version }}' }
+
+    - name: Build DMG
       shell: bash
+      env: { FLAVOR: '${{ inputs.flavor }}', PKG: '${{ inputs.desktop_package_name }}' }
+      run: ./gradlew ":$PKG:packageReleaseDmg" "-PflavorDimension=$FLAVOR"
+
+    - name: Locate DMG
+      id: locate
+      shell: bash
+      env: { PKG: '${{ inputs.desktop_package_name }}' }
       run: |
-        echo "::error::Sub-action mac-dmg-unsigned is not yet implemented."
-        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
-        exit 1
+        DMG=$(find "$PKG/build/compose/binaries/main-release/dmg" -name '*.dmg' -type f | head -1 || true)
+        echo "dmg_path=$DMG" >> "$GITHUB_OUTPUT"
+        [[ -f "$DMG" ]] && echo "✅ DMG built: $DMG" || echo "::warning::DMG not found"
+
+    - name: Upload to GH Release (optional)
+      if: ${{ inputs.github_tag != '' && steps.locate.outputs.dmg_path != '' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG:      ${{ inputs.github_tag }}
+        DMG:      ${{ steps.locate.outputs.dmg_path }}
+      run: gh release upload "$TAG" "$DMG" --clobber
+
+    - name: Upload DMG artifact
+      if: ${{ steps.locate.outputs.dmg_path != '' }}
+      uses: actions/upload-artifact@v4
+      with: { name: mac-dmg-unsigned, path: '${{ steps.locate.outputs.dmg_path }}' }
