@@ -1,5 +1,9 @@
 # mifos-x-actionhub-publish-apple-kmp
 
+[![Release](https://img.shields.io/github/v/release/therajanmaurya/mifos-x-actionhub-publish-apple-kmp?label=release&logo=github)](https://github.com/therajanmaurya/mifos-x-actionhub-publish-apple-kmp/releases/latest)
+[![PR Check](https://github.com/therajanmaurya/mifos-x-actionhub-publish-apple-kmp/actions/workflows/pr-check.yaml/badge.svg)](https://github.com/therajanmaurya/mifos-x-actionhub-publish-apple-kmp/actions/workflows/pr-check.yaml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+
 > Composite GitHub Actions for KMP **Apple platforms** (iOS + macOS): build + Firebase Distribution + TestFlight + App Store + Mac App Store + Developer ID notarized DMG. All work that requires an Apple Developer Program account lives here.
 
 ## Why "apple", not "ios"
