@@ -1,19 +1,15 @@
-# .github/workflows/release.yaml
+# .github/workflows/tag.yaml
 #
-# Auto-tags v2.0.X on every merge to main + updates rolling @v2 pointer.
-# Consumers can pin exact (@v2.0.5) or rolling (@v2) per their preference.
-#
-# Versioning policy: SemVer. Major bump requires manual override (set
-# `RELEASE_OVERRIDE_MAJOR=true` env var in this workflow's run inputs).
-name: Release
+# Manually-fired version tagger. Cuts v2.0.X tags + updates rolling @v2 pointer.
+# NOT auto-triggered on push (avoids spurious patches on every chore commit).
+# Maintainer dispatches via `gh workflow run tag.yaml -f bump=patch|minor|major`.
+name: Tag Release
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump (patch | minor | major)"
+        description: "Version bump"
         required: false
         type: choice
         options: [patch, minor, major]
@@ -27,17 +23,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # need full history for latest-tag lookup
+        with: { fetch-depth: 0 }
 
       - name: Compute next version
         id: bump
         run: |
           set -euo pipefail
-          # Find latest v2.* tag; default to v2.0.0 if none
-          LATEST=$(git tag -l 'v2.*' | sort -V | tail -1)
+          LATEST=$(git tag -l 'v2.*' | grep -v '^v2$' | sort -V | tail -1)
           LATEST=${LATEST:-v2.0.0}
-          BUMP_KIND="${{ inputs.bump || 'patch' }}"
+          BUMP_KIND="${{ inputs.bump }}"
           IFS='.' read -r MAJ MIN PAT <<< "${LATEST#v}"
           case "$BUMP_KIND" in
             patch) PAT=$((PAT + 1)) ;;
@@ -45,30 +39,21 @@ jobs:
             major) MAJ=$((MAJ + 1)); MIN=0; PAT=0 ;;
           esac
           NEXT="v${MAJ}.${MIN}.${PAT}"
-          echo "next=$NEXT"   >> "$GITHUB_OUTPUT"
-          echo "major=v$MAJ"  >> "$GITHUB_OUTPUT"
-          echo "📦 Latest: $LATEST → Next: $NEXT (rolling: v$MAJ)"
+          echo "next=$NEXT"  >> "$GITHUB_OUTPUT"
+          echo "major=v$MAJ" >> "$GITHUB_OUTPUT"
+          echo "📦 Latest: $LATEST → Next: $NEXT"
 
-      - name: Create exact tag + rolling major tag
+      - name: Create tag + rolling major + GH Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXT:    ${{ steps.bump.outputs.next }}
-          MAJOR:   ${{ steps.bump.outputs.major }}
+          NEXT:  ${{ steps.bump.outputs.next }}
+          MAJOR: ${{ steps.bump.outputs.major }}
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$NEXT"  -m "Release $NEXT"
-          # Rolling @v2 — force-update to current commit
           git tag -f "$MAJOR" -m "Rolling pointer to latest $MAJOR.x.y"
           git push origin "$NEXT"
           git push -f origin "$MAJOR"
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXT:    ${{ steps.bump.outputs.next }}
-        run: |
-          gh release create "$NEXT" \
-            --title "$NEXT" \
-            --notes "See [CHANGELOG.md](./CHANGELOG.md) for details."
+          gh release create "$NEXT" --title "$NEXT" --notes "See [CHANGELOG.md](./CHANGELOG.md)."
