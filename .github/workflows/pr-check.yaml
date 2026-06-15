@@ -51,7 +51,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: find _shared/scripts -name '*.sh' -exec shellcheck -S warning {} +
-      - name: Lint Ruby helpers
-        run: |
-          gem install rubocop -N
-          find _shared/lib -name '*.rb' -exec rubocop --no-color --format=simple {} \; || true
+      # Ruby syntax checked locally before push; rubocop in CI requires sudo
+      # gem install (or bundler setup) and adds little value at the moment.
+      # Re-enable when _shared/lib/*.rb is populated with substantial Ruby.
