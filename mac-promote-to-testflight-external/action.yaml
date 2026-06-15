@@ -1,0 +1,19 @@
+# Sub-action: mac-promote-to-testflight-external
+# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
+#
+# STATUS: Stub — action.yaml + README skeleton placed. Implementation pending
+# (see plan-layer/active/actionhub-constellation-consolidation/PLAN.md Phase P3/P4/P5).
+#
+# Lift source documented in this repo's CHANGELOG.md.
+name: 'mifos-x-actionhub-publish-apple-kmp — mac-promote-to-testflight-external (TODO)'
+description: 'TODO: replace with real implementation lifted from legacy actionhub repo.'
+author: 'Mifos Initiative'
+runs:
+  using: 'composite'
+  steps:
+    - name: TODO — implement
+      shell: bash
+      run: |
+        echo "::error::Sub-action mac-promote-to-testflight-external is not yet implemented."
+        echo "See https://github.com/openMF/mifos-x-actionhub-publish-apple-kmp/blob/main/CHANGELOG.md for lift source."
+        exit 1

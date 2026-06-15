@@ -1,0 +1,42 @@
+# Local dev junk
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Editor
+.idea/
+.vscode/
+*.iml
+
+# Secrets / decoded fixtures (defensive — these should never be committed)
+*.p12
+*.p8
+*.jks
+*.keystore
+secrets/
+keystores/
+*.private.key
+
+# Ruby / Bundler
+.bundle/
+vendor/bundle/
+Gemfile.lock
+
+# Build artifacts (test runs of sub-actions may leave these behind)
+*.apk
+*.aab
+*.ipa
+*.dmg
+*.pkg
+*.exe
+*.msi
+*.deb
+*.zip
+*.tar.gz
+build/
+dist/
+
+# CI run scratch
+.runner-temp/
+runner_*.log
