@@ -34,8 +34,6 @@ Gemfile.lock
 *.deb
 *.zip
 *.tar.gz
-build/
-dist/
 
 # CI run scratch
 .runner-temp/
