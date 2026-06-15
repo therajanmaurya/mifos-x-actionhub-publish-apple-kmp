@@ -1,74 +1,150 @@
-# .github/workflows/release.yaml
+# .github/workflows/release-apple.yaml
 #
-# Auto-tags v2.0.X on every merge to main + updates rolling @v2 pointer.
-# Consumers can pin exact (@v2.0.5) or rolling (@v2) per their preference.
+# ADDITIVE — reusable workflow for Apple platforms (iOS or macOS) promotion ladder.
+# Companion to existing iOS/macOS workflows. Existing workflows UNCHANGED.
 #
-# Versioning policy: SemVer. Major bump requires manual override (set
-# `RELEASE_OVERRIDE_MAJOR=true` env var in this workflow's run inputs).
-name: Release
+# Promotion model (uniform across iOS + macOS, switched by `platform` input):
+#   Stage 0 (firebase)        — out-of-band dev/QA (iOS only; macOS skips)
+#   Stage 1 (internal)        — TestFlight Internal, 1 reviewer required
+#   Stage 2 (beta)            — TestFlight External (Apple beta review ~24h), 1 reviewer
+#   Stage 3 (production)      — App Store / Mac App Store (Apple review 1-3d), 2 reviewers + wait
+name: Release · Apple (ladder)
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      bump:
-        description: "Version bump (patch | minor | major)"
+      platform:
+        description: "Platform: ios | mac"
+        required: true
+        type: string
+      package_name:
+        description: 'Gradle module (e.g. cmp-ios or cmp-desktop)'
+        required: true
+        type: string
+      shared_module:
+        description: 'KMP shared module path (e.g. cmp-shared)'
+        required: true
+        type: string
+      version_tag:
+        description: 'Version tag'
+        required: true
+        type: string
+      starting_rung:
+        description: "Resume from: firebase | internal | beta | production"
         required: false
-        type: choice
-        options: [patch, minor, major]
-        default: patch
+        type: string
+        default: 'internal'
 
-permissions:
-  contents: write
+    secrets:
+      appstore_key_id:           { required: true }
+      appstore_issuer_id:        { required: true }
+      appstore_auth_key:         { required: true }
+      match_password:            { required: true }
+      match_ssh_private_key:     { required: true }
+      firebase_creds:            { required: false }
+
+concurrency:
+  group: release-apple-${{ inputs.platform }}
+  cancel-in-progress: true
 
 jobs:
-  tag-release:
-    runs-on: ubuntu-latest
+  stage-0-firebase:
+    name: Stage 0 — Firebase App Distribution (iOS only)
+    if: |
+      inputs.platform == 'ios' &&
+      contains(fromJSON('["firebase","internal","beta","production"]'), inputs.starting_rung)
+    runs-on: macos-14
+    environment: ios-firebase
     steps:
       - uses: actions/checkout@v4
+      - name: Publish to Firebase
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@main
         with:
-          fetch-depth: 0   # need full history for latest-tag lookup
+          ios_package_name:      ${{ inputs.package_name }}
+          shared_module:         ${{ inputs.shared_module }}
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          match_password:        ${{ secrets.match_password }}
+          match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
+          firebase_creds:        ${{ secrets.firebase_creds }}
 
-      - name: Compute next version
-        id: bump
-        run: |
-          set -euo pipefail
-          # Find latest v2.* tag; default to v2.0.0 if none
-          LATEST=$(git tag -l 'v2.*' | sort -V | tail -1)
-          LATEST=${LATEST:-v2.0.0}
-          BUMP_KIND="${{ inputs.bump || 'patch' }}"
-          IFS='.' read -r MAJ MIN PAT <<< "${LATEST#v}"
-          case "$BUMP_KIND" in
-            patch) PAT=$((PAT + 1)) ;;
-            minor) MIN=$((MIN + 1)); PAT=0 ;;
-            major) MAJ=$((MAJ + 1)); MIN=0; PAT=0 ;;
-          esac
-          NEXT="v${MAJ}.${MIN}.${PAT}"
-          echo "next=$NEXT"   >> "$GITHUB_OUTPUT"
-          echo "major=v$MAJ"  >> "$GITHUB_OUTPUT"
-          echo "📦 Latest: $LATEST → Next: $NEXT (rolling: v$MAJ)"
+  stage-1-testflight-internal:
+    name: Stage 1 — TestFlight Internal
+    needs: [stage-0-firebase]
+    if: contains(fromJSON('["internal","beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
+    runs-on: macos-14
+    environment: ${{ inputs.platform }}-testflight-internal
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload to TestFlight Internal (iOS)
+        if: inputs.platform == 'ios'
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@main
+        with:
+          ios_package_name:      ${{ inputs.package_name }}
+          shared_module:         ${{ inputs.shared_module }}
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          match_password:        ${{ secrets.match_password }}
+          match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
+      - name: Upload to Mac TestFlight Internal (macOS)
+        if: inputs.platform == 'mac'
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@main
+        with:
+          desktop_package_name:  ${{ inputs.package_name }}
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          match_password:        ${{ secrets.match_password }}
+          match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
 
-      - name: Create exact tag + rolling major tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXT:    ${{ steps.bump.outputs.next }}
-          MAJOR:   ${{ steps.bump.outputs.major }}
-        run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$NEXT"  -m "Release $NEXT"
-          # Rolling @v2 — force-update to current commit
-          git tag -f "$MAJOR" -m "Rolling pointer to latest $MAJOR.x.y"
-          git push origin "$NEXT"
-          git push -f origin "$MAJOR"
+  stage-2-promote-to-external-beta:
+    name: Stage 2 — Promote to TestFlight External (no rebuild)
+    needs: [stage-1-testflight-internal]
+    if: contains(fromJSON('["beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
+    runs-on: macos-14
+    environment: ${{ inputs.platform }}-testflight-external
+    steps:
+      - uses: actions/checkout@v4
+      - name: Promote iOS TF Internal → External
+        if: inputs.platform == 'ios'
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@main
+        with:
+          ios_package_name:      ${{ inputs.package_name }}
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+      - name: Promote Mac TF Internal → External
+        if: inputs.platform == 'mac'
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@main
+        with:
+          desktop_package_name:  ${{ inputs.package_name }}
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXT:    ${{ steps.bump.outputs.next }}
-        run: |
-          gh release create "$NEXT" \
-            --title "$NEXT" \
-            --notes "See [CHANGELOG.md](./CHANGELOG.md) for details."
+  stage-3-promote-to-app-store:
+    name: Stage 3 — Promote to App Store (2 reviewers + wait timer, no rebuild)
+    needs: [stage-2-promote-to-external-beta]
+    if: inputs.starting_rung == 'production' && !cancelled() && !failure()
+    runs-on: macos-14
+    environment: ${{ inputs.platform }}-app-store
+    steps:
+      - uses: actions/checkout@v4
+      - name: Promote iOS TF → App Store
+        if: inputs.platform == 'ios'
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@main
+        with:
+          ios_package_name:      ${{ inputs.package_name }}
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+      - name: Promote Mac TF → Mac App Store
+        if: inputs.platform == 'mac'
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@main
+        with:
+          desktop_package_name:  ${{ inputs.package_name }}
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
