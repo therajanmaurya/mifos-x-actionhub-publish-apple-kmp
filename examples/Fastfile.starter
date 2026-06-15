@@ -1,0 +1,165 @@
+# examples/Fastfile.starter — minimal Fastfile shape for consumers of
+# openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.0
+#
+# Copy to your consumer repo as `Fastfile` (or `deployment/fastlane/Fastfile`)
+# and customize the BUILD_CONFIG + lane bodies. See LANES_REQUIRED.md for the
+# full contract.
+#
+# This is a STARTER stub. For a fully-implemented working Fastfile, see:
+#   https://github.com/openMF/kmp-project-template/blob/dev/deployment/fastlane/Fastfile
+
+fastlane_require 'spaceship'
+
+opt_out_usage
+
+default_platform(:ios)
+
+# ---------------------------------------------------------------------------
+# Project-specific config
+# ---------------------------------------------------------------------------
+APP_IDENTIFIER  = ENV['IOS_APP_IDENTIFIER']  || 'org.example.app'
+MAC_APP_IDENTIFIER = ENV['MAC_APP_IDENTIFIER'] || APP_IDENTIFIER
+TEAM_ID         = ENV['APPLE_TEAM_ID']       || 'TEAMID'
+MATCH_GIT_URL   = ENV['MATCH_GIT_URL']       || 'git@github.com:your-org/match-certs.git'
+
+# ---------------------------------------------------------------------------
+# iOS lanes
+# ---------------------------------------------------------------------------
+platform :ios do
+  before_all do
+    setup_ci_if_needed
+    load_api_key
+  end
+
+  lane :build_ios do
+    # Debug build — no codesign
+    sh("./gradlew :cmp-ios:compileKotlin")
+    sh("xcodebuild -workspace cmp-ios/iosApp.xcworkspace -scheme iosApp -configuration Debug -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO")
+  end
+
+  lane :build_signed_ios do
+    match(type: 'appstore', app_identifier: APP_IDENTIFIER, readonly: true)
+    build_ios_app(workspace: 'cmp-ios/iosApp.xcworkspace', scheme: 'iosApp', configuration: 'Release')
+  end
+
+  lane :beta do
+    build_signed_ios
+    upload_to_testflight(skip_waiting_for_build_processing: true)
+  end
+
+  lane :deploy_on_firebase do
+    build_signed_ios
+    firebase_app_distribution(
+      app: ENV['FIREBASE_IOS_APP_ID'],
+      service_credentials_file: 'secrets/firebaseAppDistributionServiceCredentialsFile.json',
+      groups: ENV['FIREBASE_GROUPS'],
+    )
+  end
+
+  lane :release do
+    build_signed_ios
+    upload_to_app_store(submit_for_review: true, automatic_release: true)
+  end
+
+  # 🆕 NEW — promote existing TF build to External (Apple beta review ~24h)
+  lane :promoteToExternalBeta do |options|
+    build_number = options[:build_number] || ENV['BUILD_NUMBER']
+    groups       = options[:groups]       || ENV['EXTERNAL_GROUPS'] || 'External Beta'
+    pilot(
+      app_identifier:           APP_IDENTIFIER,
+      build_number:             build_number,
+      distribute_only:          true,
+      distribute_external:      true,
+      notify_external_testers:  true,
+      groups:                   groups.split(','),
+      submit_beta_review:       true,
+    )
+  end
+
+  lane :promoteToAppStore do |options|
+    build_number = options[:build_number] || ENV['BUILD_NUMBER']
+    deliver(
+      app_identifier:     APP_IDENTIFIER,
+      build_number:       build_number,
+      skip_binary_upload: true,
+      submit_for_review:  true,
+      automatic_release:  true,
+    )
+  end
+end
+
+# ---------------------------------------------------------------------------
+# macOS lanes
+# ---------------------------------------------------------------------------
+platform :mac do
+  lane :desktop_testflight do
+    # See kmp-project-template/deployment/desktop/mac-app-store/lane.rb for the
+    # full implementation (Match + codesign + productbuild + pilot).
+    UI.user_error!('Implement desktop_testflight — see kmp-project-template reference')
+  end
+
+  lane :desktop_release do
+    UI.user_error!('Implement desktop_release — see kmp-project-template reference')
+  end
+
+  # 🆕 NEW
+  lane :promoteMacToExternalBeta do |options|
+    build_number = options[:build_number] || ENV['BUILD_NUMBER']
+    pilot(
+      app_platform:             'osx',
+      app_identifier:           MAC_APP_IDENTIFIER,
+      build_number:             build_number,
+      distribute_only:          true,
+      distribute_external:      true,
+      notify_external_testers:  true,
+      groups:                   (options[:groups] || ENV['EXTERNAL_GROUPS'] || 'External Beta').split(','),
+      submit_beta_review:       true,
+    )
+  end
+
+  lane :promoteMacToAppStore do |options|
+    build_number = options[:build_number] || ENV['BUILD_NUMBER']
+    deliver(
+      platform:           'osx',
+      app_identifier:     MAC_APP_IDENTIFIER,
+      build_number:       build_number,
+      skip_binary_upload: true,
+      submit_for_review:  true,
+      automatic_release:  true,
+    )
+  end
+
+  # 🆕 NEW — Match-managed Developer ID + Fastlane notarize action
+  # See kmp-project-template/deployment/desktop/dmg-notarized/lane.rb for the
+  # full reference implementation (250 lines including helpers).
+  lane :buildNotarizedMacDmg do |options|
+    ad_hoc = options[:ad_hoc] == true || ENV['AD_HOC_SIGNING'] == '1'
+    stage  = options[:stage] || ENV['STAGE'] || 'stable'
+    tag    = options[:tag]   || ENV['GIT_TAG']
+
+    if ad_hoc
+      UI.important('⚠️  AD_HOC mode — skipping Match + notarize + GH upload')
+      # Build unsigned .app, codesign ad-hoc, wrap in DMG, exit
+      return
+    end
+
+    UI.user_error!('Implement buildNotarizedMacDmg — see kmp-project-template reference')
+  end
+end
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def load_api_key
+  app_store_connect_api_key(
+    key_id:       ENV['APPSTORE_KEY_ID'],
+    issuer_id:    ENV['APPSTORE_ISSUER_ID'],
+    key_filepath: 'secrets/AuthKey.p8',
+    duration:     1200,
+    in_house:     false,
+  )
+end
+
+def setup_ci_if_needed
+  setup_ci(force: true) if ENV['CI']
+end

@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Publish to Firebase
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@main
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.0
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
@@ -79,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Upload to TestFlight Internal (iOS)
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@main
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.0
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
@@ -90,7 +90,7 @@ jobs:
           match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
       - name: Upload to Mac TestFlight Internal (macOS)
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@main
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.0
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF Internal → External
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@main
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.0
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -117,7 +117,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF Internal → External
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@main
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.0
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -134,7 +134,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF → App Store
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@main
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.0
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -142,7 +142,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF → Mac App Store
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@main
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.0
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
