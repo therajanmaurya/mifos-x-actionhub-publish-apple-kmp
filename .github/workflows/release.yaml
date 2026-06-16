@@ -9,6 +9,7 @@
 #   Stage 2 (beta)            — TestFlight External (Apple beta review ~24h), 1 reviewer
 #   Stage 3 (production)      — App Store / Mac App Store (Apple review 1-3d), 2 reviewers + wait
 name: Release · Apple (ladder)
+run-name: "🍎 Release ${{ inputs.platform }} ${{ inputs.version_tag }} · ladder→${{ inputs.starting_rung }}"
 
 on:
   workflow_call:
@@ -48,8 +49,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Preflight: validate required secrets per rung — fail-fast in ~8s instead of
+  # dying deep in Xcode build / Fastlane Match after 10+ min with a confusing error.
+  validate-secrets:
+    name: Preflight · Validate required secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check apple/match secrets
+        env:
+          appstore_key_id:       ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          match_password:        ${{ secrets.match_password }}
+          match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
+          firebase_creds:        ${{ secrets.firebase_creds }}
+        run: |
+          MISSING=()
+          [[ -z "${appstore_key_id:-}" ]]       && MISSING+=("appstore_key_id")
+          [[ -z "${appstore_issuer_id:-}" ]]    && MISSING+=("appstore_issuer_id")
+          [[ -z "${appstore_auth_key:-}" ]]     && MISSING+=("appstore_auth_key")
+          [[ -z "${match_password:-}" ]]        && MISSING+=("match_password")
+          [[ -z "${match_ssh_private_key:-}" ]] && MISSING+=("match_ssh_private_key")
+
+          if [[ "${{ inputs.platform }}" == "ios" && "${{ inputs.starting_rung }}" == "firebase" ]]; then
+            [[ -z "${firebase_creds:-}" ]] && MISSING+=("firebase_creds")
+          fi
+
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "❌ Apple ${{ inputs.platform }} ladder→${{ inputs.starting_rung }} requires these secrets, but they are MISSING:"
+            printf '   - %s\n' "${MISSING[@]}"
+            echo ""
+            echo "Set them in your repo's Settings → Secrets and variables → Actions:"
+            for s in "${MISSING[@]}"; do echo "   gh secret set $s --repo \${{ github.repository }}"; done
+            exit 1
+          fi
+          echo "✅ Apple ${{ inputs.platform }} secrets present"
+
   stage-0-firebase:
     name: Stage 0 — Firebase App Distribution (iOS only)
+    needs: [validate-secrets]
     if: |
       inputs.platform == 'ios' &&
       contains(fromJSON('["firebase","internal","beta","production"]'), inputs.starting_rung)
@@ -71,7 +109,9 @@ jobs:
 
   stage-1-testflight-internal:
     name: Stage 1 — TestFlight Internal
-    needs: [stage-0-firebase]
+    # Depend on validate-secrets explicitly (stage-0 only runs for ios platform,
+    # so mac platform's stage-1 needs the explicit gate).
+    needs: [validate-secrets, stage-0-firebase]
     if: contains(fromJSON('["internal","beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
     runs-on: macos-14
     environment: ${{ inputs.platform }}-testflight-internal
