@@ -35,13 +35,18 @@ on:
         required: false
         type: string
         default: 'internal'
+      tester_groups:
+        description: 'Firebase tester groups (comma-separated, Stage 0 firebase only)'
+        required: false
+        type: string
+        default: 'ios-internal,beta-testers'
 
     secrets:
       appstore_key_id:           { required: true }
       appstore_issuer_id:        { required: true }
       appstore_auth_key:         { required: true }
       match_password:            { required: true }
-      match_ssh_private_key:     { required: true }
+      match_ssh_private_key:     { required: true }  # caller passes this name; mapped internally to match_git_private_key for composite actions (v2.0.7+ alias)
       firebase_creds:            { required: false }
 
 concurrency:
@@ -104,8 +109,9 @@ jobs:
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
           match_password:        ${{ secrets.match_password }}
-          match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
+          match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action expects "git" name; caller passes "ssh" — rename here
           firebase_creds:        ${{ secrets.firebase_creds }}
+          tester_groups:         ${{ inputs.tester_groups }}
 
   stage-1-testflight-internal:
     name: Stage 1 — TestFlight Internal
@@ -127,7 +133,15 @@ jobs:
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
           match_password:        ${{ secrets.match_password }}
-          match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
+          match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action expects "git" name; caller passes "ssh" — rename here
+      # Mac TestFlight Internal — the action requires manual signing certs
+      # (NOT Match-based). Required inputs (bundle_identifier, mac_signing_*,
+      # mac_installer_*, mac_provisioning_profile_base64, keychain_password)
+      # need to be passed by the orchestrator from the consumer's GHA secrets.
+      # Until the orchestrator + consumer wire those up, Mac stage will halt
+      # at this step with an "unexpected input(s)" error. Track at:
+      #   https://github.com/therajanmaurya/mifos-x-actionhub-publish-apple-kmp/issues
+      # For now, dispatch with `mac_rung: skip` to avoid this code path.
       - name: Upload to Mac TestFlight Internal (macOS)
         if: inputs.platform == 'mac'
         uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.0
@@ -136,8 +150,7 @@ jobs:
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
-          match_password:        ${{ secrets.match_password }}
-          match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
+          match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action takes match_git_private_key (even for non-iOS, leftover API)
 
   stage-2-promote-to-external-beta:
     name: Stage 2 — Promote to TestFlight External (no rebuild)

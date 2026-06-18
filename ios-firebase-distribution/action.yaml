@@ -23,15 +23,13 @@ runs:
     - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
       with: { bundler-cache: true }
 
-    - name: Install Fastlane plugins
-      shell: bash
-      # bundle exec: setup-ruby's `bundler-cache: true` step installed
-      # fastlane to ./vendor/bundle (user-writable). Bare `fastlane
-      # add_plugin` would invoke the SYSTEM fastlane in /var/lib/gems
-      # (root-owned since 2026-06 runner image refresh) and fail with
-      # "You don't have write permissions". Using bundle exec routes to
-      # the user-installed binary; idempotent if plugin already in Pluginfile.
-      run: bundle exec fastlane add_plugin firebase_app_distribution --version=1.0.0
+    # Plugin install step intentionally OMITTED (v2.0.6 reverted; v2.0.7+).
+    # Reason: `fastlane add_plugin` doesn't accept `--version=<v>` — fastlane
+    # parses the value as a second plugin name and aborts. The consumer's
+    # fastlane/Pluginfile already declares the plugin and bundle install
+    # (via setup-ruby's bundler-cache:true) resolves + installs it.
+    # The step was redundant AND buggy. Plugin version pinning belongs in
+    # the consumer's Pluginfile, not here.
 
     - name: Materialize Apple secrets + Firebase creds
       shell: bash

@@ -308,20 +308,25 @@ for s in d[\"jobs\"][\"stage-1-testflight-internal\"].get(\"steps\", []):
         intersect = required_cert_inputs & passed
         assert not intersect, f\"release.yaml now passes {intersect} — flip this test to ensure-passed (BUG FIXED)\"
 '"
-run_test "T45: KNOWN BUG — naming mismatch: actions take match_git_private_key, caller passes match_ssh_private_key" "py '
+run_test "T45: BUG FIXED — release.yaml renames match_ssh → match_git when passing to actions (v2.0.7+)" "py '
 import yaml
+# Actions still declare match_git_private_key
 for a_name in [\"ios-firebase-distribution\",\"ios-testflight-internal\",\"mac-testflight-internal\"]:
     a = yaml.safe_load(open(f\"{a_name}/action.yaml\"))
     declared = set(a.get(\"inputs\", {}).keys())
-    assert \"match_git_private_key\" in declared, f\"{a_name} no longer takes match_git_private_key — bug fixed?\"
-# Verify caller passes the WRONG name
+    assert \"match_git_private_key\" in declared, f\"{a_name} no longer takes match_git_private_key — interface changed?\"
+# Verify caller now passes the CORRECT name (match_git_private_key, not match_ssh_private_key)
 d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
-mismatch_found = False
-for j in d[\"jobs\"].values():
-    for s in j.get(\"steps\", []) if isinstance(j, dict) else []:
-        if isinstance(s,dict) and \"with\" in s and \"match_ssh_private_key\" in s.get(\"with\", {}):
-            mismatch_found = True
-assert mismatch_found, \"release.yaml no longer uses match_ssh_private_key — naming reconciled, BUG FIXED?\"
+for j_name, j in d[\"jobs\"].items():
+    if \"steps\" not in j: continue
+    for s in j.get(\"steps\", []):
+        if isinstance(s,dict) and \"publish-apple-kmp/\" in str(s.get(\"uses\", \"\")):
+            assert \"match_ssh_private_key\" not in s.get(\"with\", {}), j_name + \" still passes the wrong name match_ssh_private_key — fix incomplete\"
+            # match_git_private_key should be present (renamed correctly)
+            uses_action = s[\"uses\"].split(\"/\")[-1].split(\"@\")[0]
+            # mac-promote-stages and ios-promote-to-app-store may not need match key
+            if uses_action in [\"ios-firebase-distribution\",\"ios-testflight-internal\",\"mac-testflight-internal\"]:
+                assert \"match_git_private_key\" in s.get(\"with\", {}), j_name + \" missing match_git_private_key after rename for \" + uses_action
 '"
 run_test "T46: KNOWN BUG — inconsistent platform package_name naming: ios_package_name vs desktop_package_name (should be mac_package_name)" "py '
 import yaml
@@ -378,6 +383,90 @@ for action_yaml in glob.glob(\"**/action.yaml\", recursive=True):
         if isinstance(step, dict) and \"setup-ruby\" in str(step.get(\"uses\", \"\")):
             w = step.get(\"with\", {})
             assert w.get(\"bundler-cache\") in [True, \"true\"], action_yaml + \" — setup-ruby missing bundler-cache:true\"
+'"
+echo
+
+# ── Tier 11: release.yaml input contract — every with: passes valid + complete inputs ──
+#
+# CATCHES THE BUG CLASS that caused the runtime failures:
+#   "Unexpected input(s) 'match_ssh_private_key' ..." → silent drop at runtime
+#   missing required inputs → action exits 1 with cryptic error
+#
+# Asserts every `with:` block in release.yaml passes inputs the called composite
+# action actually DECLARES, AND that all required inputs are present. Documented
+# Mac gaps are allowlisted (KNOWN_GAPS) so the test PASSES current state but
+# FAILS on any new contract drift — including when Mac is fixed (the allowlist
+# entries become stale and the test catches the over-allowlisting).
+echo "── Tier 11: release.yaml input contract ──"
+run_test "T49: every release.yaml 'with:' block passes valid + complete inputs (Mac gaps documented)" "python3 -c '
+import yaml, os, sys
+
+# Documented Mac contract gaps (require user-side cert setup — see release.yaml
+# comments + project README). When these are addressed, remove the entries
+# below; the test will then catch any future regressions.
+KNOWN_GAPS = {
+    (\"stage-1-testflight-internal\", \"mac-testflight-internal\", \"MISSING\"): [
+        \"bundle_identifier\", \"keychain_password\",
+        \"mac_installer_certificate\", \"mac_installer_certificate_password\",
+        \"mac_provisioning_profile_base64\",
+        \"mac_signing_certificate\", \"mac_signing_certificate_password\",
+    ],
+    (\"stage-2-promote-to-external-beta\", \"mac-promote-to-testflight-external\", \"MISSING\"): [\"bundle_identifier\"],
+    (\"stage-3-promote-to-app-store\", \"mac-promote-to-app-store\", \"MISSING\"): [\"bundle_identifier\"],
+}
+
+d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
+unexpected = []
+stale_allowlist = []
+
+found_gaps = set()
+for j_name, j in d[\"jobs\"].items():
+    if \"steps\" not in j: continue
+    for step in j.get(\"steps\", []):
+        if not isinstance(step, dict): continue
+        uses = step.get(\"uses\", \"\")
+        if \"publish-apple-kmp/\" not in uses: continue
+        sub = uses.split(\"/\")[-1].split(\"@\")[0]
+        action_yaml = sub + \"/action.yaml\"
+        if not os.path.exists(action_yaml): continue
+        action_def = yaml.safe_load(open(action_yaml))
+        declared = set(action_def.get(\"inputs\", {}).keys())
+        passed = set(step.get(\"with\", {}).keys())
+        unknown = passed - declared
+        missing_required = set()
+        for inp_name, inp_def in action_def.get(\"inputs\", {}).items():
+            if isinstance(inp_def, dict) and inp_def.get(\"required\") == True and inp_name not in passed:
+                missing_required.add(inp_name)
+
+        for u in unknown:
+            key = (j_name, sub, \"UNKNOWN\")
+            if u in KNOWN_GAPS.get(key, []):
+                found_gaps.add(key)
+            else:
+                unexpected.append(f\"{j_name} -> {sub}: UNKNOWN input passed (silent drop): {u}\")
+
+        for m in missing_required:
+            key = (j_name, sub, \"MISSING\")
+            if m in KNOWN_GAPS.get(key, []):
+                found_gaps.add(key)
+            else:
+                unexpected.append(f\"{j_name} -> {sub}: MISSING required input: {m}\")
+
+# Check allowlist freshness — if a KNOWN_GAPS entry exists but the violation no
+# longer fires, the allowlist is stale (Mac was fixed but allowlist not cleared)
+for key in KNOWN_GAPS:
+    if key not in found_gaps:
+        stale_allowlist.append(str(key))
+
+if unexpected:
+    print(\"FAIL — new contract drift:\")
+    for u in unexpected: print(\"  \" + u)
+    sys.exit(1)
+if stale_allowlist:
+    print(\"FAIL — KNOWN_GAPS entries no longer firing (clear them):\")
+    for s in stale_allowlist: print(\"  \" + s)
+    sys.exit(1)
+print(\"OK — input contract clean (Mac gaps documented in KNOWN_GAPS)\")
 '"
 echo
 
