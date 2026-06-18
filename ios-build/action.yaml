@@ -38,7 +38,12 @@ runs:
       if: ${{ inputs.use_cocoapods == 'true' }}
       shell: bash
       run: |
-        gem install cocoapods -N
+        # sudo: GHA runner system gem dir is root-owned since 2026-06 image
+        # refresh — bare `gem install` fails with "You don't have write
+        # permissions for the /var/lib/gems/3.2.0 directory". sudo grants
+        # the install permission. CocoaPods runs at system scope (no
+        # bundler context like fastlane), so sudo is the correct fix here.
+        sudo gem install cocoapods -N
         cd "${{ inputs.ios_package_name }}" && pod install --repo-update
 
     - name: Materialize Apple secrets (Release only)

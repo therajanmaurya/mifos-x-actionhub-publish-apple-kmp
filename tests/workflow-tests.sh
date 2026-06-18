@@ -333,6 +333,54 @@ for a_name in [\"mac-testflight-internal\",\"mac-promote-to-testflight-external\
 '"
 echo
 
+# ── Tier 10: Runtime bug-class regressions (since v2.0.6) ────────────────────
+#
+# Locks down bug classes that broke real workflow runs. Each test asserts the
+# absence of a known bad pattern across every action.yaml in this repo.
+echo "── Tier 10: Runtime bug-class regressions ──"
+run_test "T47: No bare gem-write commands (every gem install/bundle install/fastlane add_plugin must be sudo or bundle-exec-prefixed)" "python3 -c '
+import re, glob
+# Patterns that fail on GHA runner images post-2026-06 (system gem dir /var/lib/gems is root-owned)
+BARE_PATTERNS = [
+    re.compile(r\"^\\s+(?:run:\\s*)?(?:gem install|bundle install|fastlane add_plugin|gem update)(?:\\s|$)\"),
+    re.compile(r\"^\\s+(?:run:\\s*\\|)?\\s*(gem install|bundle install|fastlane add_plugin|gem update)(?:\\s|$)\"),
+]
+SAFE_PREFIXES = (\"sudo \", \"bundle exec \", \"sudo bundle\", \"DEBIAN_FRONTEND=\")
+violations = []
+for action_yaml in glob.glob(\"**/action.yaml\", recursive=True):
+    if \"/_shared/\" in action_yaml or \"/examples/\" in action_yaml:
+        continue
+    with open(action_yaml) as f:
+        for line_num, line in enumerate(f, 1):
+            stripped = line.strip()
+            if stripped.startswith(\"#\"):
+                continue
+            for pat in BARE_PATTERNS:
+                m = pat.match(line)
+                if m:
+                    if not any(p in line for p in SAFE_PREFIXES):
+                        violations.append(f\"{action_yaml}:{line_num}  {stripped[:80]}\")
+if violations:
+    print(\"FAIL — bare gem-write commands found (need sudo or bundle exec):\")
+    for v in violations: print(f\"  {v}\")
+    exit(1)
+print(\"OK — no bare gem-write commands\")
+'"
+run_test "T48: ruby/setup-ruby steps use bundler-cache:true (gem cache enabled)" "py '
+import yaml, glob
+for action_yaml in glob.glob(\"**/action.yaml\", recursive=True):
+    if \"/_shared/\" in action_yaml or \"/examples/\" in action_yaml:
+        continue
+    d = yaml.safe_load(open(action_yaml))
+    if not d or \"runs\" not in d or \"steps\" not in d[\"runs\"]:
+        continue
+    for step in d[\"runs\"][\"steps\"]:
+        if isinstance(step, dict) and \"setup-ruby\" in str(step.get(\"uses\", \"\")):
+            w = step.get(\"with\", {})
+            assert w.get(\"bundler-cache\") in [True, \"true\"], action_yaml + \" — setup-ruby missing bundler-cache:true\"
+'"
+echo
+
 # ─────────────────────────────────────────────────────────────────────────────
 echo "════════════════════════════════════════════════════════════════════════════"
 echo "  Results: $PASS passed · $FAIL failed"

@@ -25,7 +25,13 @@ runs:
 
     - name: Install Fastlane plugins
       shell: bash
-      run: fastlane add_plugin firebase_app_distribution --version=1.0.0
+      # bundle exec: setup-ruby's `bundler-cache: true` step installed
+      # fastlane to ./vendor/bundle (user-writable). Bare `fastlane
+      # add_plugin` would invoke the SYSTEM fastlane in /var/lib/gems
+      # (root-owned since 2026-06 runner image refresh) and fail with
+      # "You don't have write permissions". Using bundle exec routes to
+      # the user-installed binary; idempotent if plugin already in Pluginfile.
+      run: bundle exec fastlane add_plugin firebase_app_distribution --version=1.0.0
 
     - name: Materialize Apple secrets + Firebase creds
       shell: bash
