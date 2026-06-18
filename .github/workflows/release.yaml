@@ -40,14 +40,30 @@ on:
         required: false
         type: string
         default: 'ios-internal,beta-testers'
+      mode:
+        description: "'standard' (default) or 'pre-materialized' — only honored by iOS Stage 0/1 in v2.0.10; later stages ignore."
+        required: false
+        type: string
+        default: 'standard'
+      fastlane_cwd:
+        description: 'Working dir for fastlane (default `.`; set to `deployment` for RULE-DEPLOYMENT-MANIFEST-001 layout)'
+        required: false
+        type: string
+        default: '.'
+      pre_fastlane_script:
+        description: 'Optional bash to run after checkout, before composite action (used in pre-materialized mode for consumer secrets-pull etc.)'
+        required: false
+        type: string
+        default: ''
 
     secrets:
-      appstore_key_id:           { required: true }
-      appstore_issuer_id:        { required: true }
-      appstore_auth_key:         { required: true }
-      match_password:            { required: true }
-      match_ssh_private_key:     { required: true }  # caller passes this name; mapped internally to match_git_private_key for composite actions (v2.0.7+ alias)
+      appstore_key_id:           { required: false }
+      appstore_issuer_id:        { required: false }
+      appstore_auth_key:         { required: false }
+      match_password:            { required: false }
+      match_ssh_private_key:     { required: false }  # caller passes this name; mapped internally to match_git_private_key for composite actions (v2.0.7+ alias)
       firebase_creds:            { required: false }
+      SOPS_AGE_KEY:              { required: false }
 
 concurrency:
   group: release-apple-${{ inputs.platform }}
@@ -56,8 +72,10 @@ concurrency:
 jobs:
   # Preflight: validate required secrets per rung — fail-fast in ~8s instead of
   # dying deep in Xcode build / Fastlane Match after 10+ min with a confusing error.
+  # Skipped in mode=pre-materialized (consumer manages secrets via pre_fastlane_script).
   validate-secrets:
     name: Preflight · Validate required secrets
+    if: ${{ inputs.mode == 'standard' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check apple/match secrets
@@ -93,18 +111,26 @@ jobs:
   stage-0-firebase:
     name: Stage 0 — Firebase App Distribution (iOS only)
     needs: [validate-secrets]
-    if: |
-      inputs.platform == 'ios' &&
-      contains(fromJSON('["firebase","internal","beta","production"]'), inputs.starting_rung)
+    if: ${{ always() && !failure() && !cancelled() && inputs.platform == 'ios' && contains(fromJSON('["firebase","internal","beta","production"]'), inputs.starting_rung) }}
     runs-on: macos-14
     environment: ios-firebase
+    env:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pre-fastlane setup (consumer-provided, pre-materialized mode)
+        if: ${{ inputs.mode == 'pre-materialized' && inputs.pre_fastlane_script != '' }}
+        shell: bash
+        run: ${{ inputs.pre_fastlane_script }}
+
       - name: Publish to Firebase
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.9
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.10
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
+          mode:                  ${{ inputs.mode }}
+          fastlane_cwd:          ${{ inputs.fastlane_cwd }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
@@ -118,17 +144,27 @@ jobs:
     # Depend on validate-secrets explicitly (stage-0 only runs for ios platform,
     # so mac platform's stage-1 needs the explicit gate).
     needs: [validate-secrets, stage-0-firebase]
-    if: contains(fromJSON('["internal","beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
+    if: ${{ always() && !failure() && !cancelled() && contains(fromJSON('["internal","beta","production"]'), inputs.starting_rung) }}
     runs-on: macos-14
     environment: ${{ inputs.platform }}-testflight-internal
+    env:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pre-fastlane setup (consumer-provided, pre-materialized mode)
+        if: ${{ inputs.mode == 'pre-materialized' && inputs.pre_fastlane_script != '' }}
+        shell: bash
+        run: ${{ inputs.pre_fastlane_script }}
+
       - name: Upload to TestFlight Internal (iOS)
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.9
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.10
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
+          mode:                  ${{ inputs.mode }}
+          fastlane_cwd:          ${{ inputs.fastlane_cwd }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
@@ -144,7 +180,7 @@ jobs:
       # For now, dispatch with `mac_rung: skip` to avoid this code path.
       - name: Upload to Mac TestFlight Internal (macOS)
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.9
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.10
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -162,7 +198,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF Internal → External
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.9
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.10
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -170,7 +206,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF Internal → External
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.9
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.10
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -187,7 +223,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF → App Store
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.9
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.10
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -195,7 +231,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF → Mac App Store
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.9
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.10
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
