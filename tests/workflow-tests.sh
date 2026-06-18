@@ -105,12 +105,13 @@ t = d[\"on\" if \"on\" in d else True][\"workflow_call\"][\"inputs\"][\"platform
 assert t.get(\"required\") == True, \"platform should be required\"
 assert t.get(\"type\") == \"string\"
 '"
-run_test "T11: workflow_call secrets include appstore + match + firebase" "py '
+run_test "T11: workflow_call secrets include the 6 canonical apple secrets (v2.0.10+ may also include SOPS_AGE_KEY for pre-materialized mode)" "py '
 import yaml
 d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
 got = set(d[\"on\" if \"on\" in d else True][\"workflow_call\"][\"secrets\"].keys())
 expected = set([\"appstore_key_id\",\"appstore_issuer_id\",\"appstore_auth_key\",\"match_password\",\"match_ssh_private_key\",\"firebase_creds\"])
-assert expected == got, \"diff: \" + str(got.symmetric_difference(expected))
+missing = expected - got
+assert not missing, \"missing required secret declarations: \" + str(missing)
 '"
 echo
 
