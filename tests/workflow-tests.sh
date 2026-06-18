@@ -154,8 +154,10 @@ d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
 cond = d[\"jobs\"][\"stage-0-firebase\"][\"if\"]
 assert \"inputs.platform == \\\"ios\\\"\" in cond or \"inputs.platform == \\\"\\047ios\\047\\\"\" in cond or \"platform == \\047ios\\047\" in cond
 uses = [s[\"uses\"] for s in d[\"jobs\"][\"stage-0-firebase\"][\"steps\"] if isinstance(s,dict) and \"publish-apple-kmp/\" in str(s.get(\"uses\",\"\"))]
-assert uses == [\"therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.0\"], uses
+assert len(uses) == 1 and \"/ios-firebase-distribution@\" in uses[0], \"got: \" + str(uses)
 '"
+# Tier 4 stage routing — assert per-stage iOS+Mac pair routing (version-agnostic;
+# Tier 12 T50 separately asserts the version pin is consistent + not frozen at v2.0.0)
 for STAGE_PAIR in "stage-1-testflight-internal:testflight-internal" "stage-2-promote-to-external-beta:promote-to-testflight-external" "stage-3-promote-to-app-store:promote-to-app-store"; do
     STAGE="${STAGE_PAIR%:*}"
     SUFFIX="${STAGE_PAIR##*:}"
@@ -163,11 +165,10 @@ for STAGE_PAIR in "stage-1-testflight-internal:testflight-internal" "stage-2-pro
 import yaml
 d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
 uses = [s[\"uses\"] for s in d[\"jobs\"][\"$STAGE\"][\"steps\"] if isinstance(s,dict) and \"publish-apple-kmp/\" in str(s.get(\"uses\",\"\"))]
-expected = set([
-    \"therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-$SUFFIX@v2.0.0\",
-    \"therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-$SUFFIX@v2.0.0\",
-])
-assert set(uses) == expected, \"got: \" + str(uses) + \", want: \" + str(expected)
+# Extract the sub-action paths (without version tag)
+got_paths = set(u.split(\"@\")[0].split(\"/\")[-1] for u in uses)
+expected = set([\"ios-$SUFFIX\", \"mac-$SUFFIX\"])
+assert got_paths == expected, \"got: \" + str(got_paths) + \", want: \" + str(expected)
 '"
 done
 for STAGE in stage-1-testflight-internal stage-2-promote-to-external-beta stage-3-promote-to-app-store; do
@@ -467,6 +468,35 @@ if stale_allowlist:
     for s in stale_allowlist: print(\"  \" + s)
     sys.exit(1)
 print(\"OK — input contract clean (Mac gaps documented in KNOWN_GAPS)\")
+'"
+echo
+
+# ── Tier 12: composite-action self-pin consistency ───────────────────────────
+#
+# CATCHES the architectural anti-pattern where release.yaml self-pins its
+# composite-action subdirs at @v2.0.0 (the OLDEST tag) and never updates the
+# references even when subsequent releases change action.yaml content. This
+# caused the v2.0.6 + v2.0.7 fixes to be silently INEFFECTIVE — release.yaml
+# @v2.0.7 was still calling ios-firebase-distribution@v2.0.0 which had the
+# buggy add_plugin step.
+echo "── Tier 12: composite-action self-pin consistency ──"
+run_test "T50: all composite-action 'uses:' refs in release.yaml use the SAME tag (no v2.0.0 freeze)" "python3 -c '
+import re, sys
+with open(\".github/workflows/release.yaml\") as f:
+    content = f.read()
+pat = re.compile(r\"uses:\\s+therajanmaurya/mifos-x-actionhub-publish-apple-kmp/[^/]+@(v[0-9.]+)\")
+tags = set(pat.findall(content))
+if len(tags) > 1:
+    print(\"FAIL — composite-action refs use INCONSISTENT tags: \" + str(sorted(tags)))
+    sys.exit(1)
+if not tags:
+    print(\"OK — no self-referencing composite-action uses\")
+    sys.exit(0)
+tag = list(tags)[0]
+if tag == \"v2.0.0\":
+    print(\"FAIL — composite-action refs frozen at v2.0.0 (the original anti-pattern); bump to current version before tagging\")
+    sys.exit(1)
+print(\"OK — composite-action refs consistent at \" + tag)
 '"
 echo
 
