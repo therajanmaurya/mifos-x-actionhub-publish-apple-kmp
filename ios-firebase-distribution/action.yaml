@@ -1,37 +1,44 @@
 # Sub-action: ios-firebase-distribution — Stage 0 dev/QA
-# Lifted from openMF/mifos-x-actionhub-publish-ios-on-firebase@v1.0.14
+# Part of openMF/mifos-x-actionhub-publish-apple-kmp@v2.0.9
+#
+# Modes (since v2.0.9):
+#   standard         — action materializes secrets, invokes fastlane lane
+#                      (assumes root-level fastlane/Fastfile with `platform :ios`).
+#   pre-materialized — caller has already materialized secrets and set env vars
+#                      before this action runs. Action just CDs to `fastlane_cwd`
+#                      and runs `bundle exec fastlane ios <lane>` — lane reads
+#                      everything from env (RULE-DEPLOYMENT-MANIFEST-001
+#                      `deployment/<platform>/<target>/lane.rb` layout).
 name: 'KMP Publish Apple — iOS Firebase Distribution (Stage 0)'
 description: 'Build signed IPA + upload to Firebase App Distribution.'
 author: 'Mifos Initiative'
 branding: { icon: 'send', color: 'orange' }
 
 inputs:
-  ios_package_name:      { required: true, description: 'iOS module name' }
-  shared_module:         { required: true, description: 'KMP shared module path' }
+  ios_package_name:      { required: true,  description: 'iOS module name' }
+  shared_module:         { required: true,  description: 'KMP shared module path' }
   use_cocoapods:         { required: false, default: 'false', description: 'Install CocoaPods' }
-  appstore_key_id:       { required: true, description: 'ASC API key ID' }
-  appstore_issuer_id:    { required: true, description: 'ASC issuer ID' }
-  appstore_auth_key:     { required: true, description: 'Base64 .p8' }
-  match_password:        { required: true, description: 'Match passphrase' }
-  match_git_private_key: { required: true, description: 'SSH key for Match repo' }
-  firebase_creds:        { required: true, description: 'Base64 Firebase SA JSON' }
-  tester_groups:         { required: true, description: 'Comma-separated Firebase tester groups' }
+  mode:                  { required: false, default: 'standard', description: "'standard' or 'pre-materialized'" }
+  fastlane_cwd:          { required: false, default: '.',       description: 'Working dir for fastlane (set to `deployment` for RULE-DEPLOYMENT-MANIFEST-001 layout)' }
+  appstore_key_id:       { required: false, default: '', description: 'ASC API key ID. Ignored when mode=pre-materialized.' }
+  appstore_issuer_id:    { required: false, default: '', description: 'ASC issuer ID. Ignored when mode=pre-materialized.' }
+  appstore_auth_key:     { required: false, default: '', description: 'Base64 .p8. Ignored when mode=pre-materialized.' }
+  match_password:        { required: false, default: '', description: 'Match passphrase. Ignored when mode=pre-materialized.' }
+  match_git_private_key: { required: false, default: '', description: 'SSH key for Match repo. Ignored when mode=pre-materialized.' }
+  firebase_creds:        { required: false, default: '', description: 'Base64 Firebase SA JSON. Ignored when mode=pre-materialized.' }
+  tester_groups:         { required: true,  description: 'Comma-separated Firebase tester groups' }
 
 runs:
   using: 'composite'
   steps:
     - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
-      with: { bundler-cache: true }
+      with:
+        bundler-cache: true
+        working-directory: ${{ inputs.fastlane_cwd }}
 
-    # Plugin install step intentionally OMITTED (v2.0.6 reverted; v2.0.7+).
-    # Reason: `fastlane add_plugin` doesn't accept `--version=<v>` — fastlane
-    # parses the value as a second plugin name and aborts. The consumer's
-    # fastlane/Pluginfile already declares the plugin and bundle install
-    # (via setup-ruby's bundler-cache:true) resolves + installs it.
-    # The step was redundant AND buggy. Plugin version pinning belongs in
-    # the consumer's Pluginfile, not here.
-
-    - name: Materialize Apple secrets + Firebase creds
+    # ─── STANDARD MODE ─────────────────────────────────────────────────────
+    - name: Materialize Apple secrets + Firebase creds (standard mode)
+      if: ${{ inputs.mode == 'standard' }}
       shell: bash
       env:
         APPSTORE_AUTH_KEY_B64: ${{ inputs.appstore_auth_key }}
@@ -39,7 +46,8 @@ runs:
         FIREBASE_CREDS_B64:    ${{ inputs.firebase_creds }}
       run: bash "$GITHUB_ACTION_PATH/../_shared/scripts/materialize-apple-secrets.sh" --firebase
 
-    - name: Deploy to Firebase
+    - name: Deploy to Firebase (standard mode)
+      if: ${{ inputs.mode == 'standard' }}
       shell: bash
       env:
         MATCH_PASSWORD:     ${{ inputs.match_password }}
@@ -48,11 +56,21 @@ runs:
         FIREBASE_GROUPS:    ${{ inputs.tester_groups }}
       run: bundle exec fastlane ios deploy_on_firebase
 
-    - name: Cleanup
-      if: always()
+    - name: Cleanup (standard mode)
+      if: ${{ always() && inputs.mode == 'standard' }}
       shell: bash
       run: rm -rf secrets
 
+    # ─── PRE-MATERIALIZED MODE ─────────────────────────────────────────────
+    - name: Deploy to Firebase (pre-materialized mode)
+      if: ${{ inputs.mode == 'pre-materialized' }}
+      shell: bash
+      working-directory: ${{ inputs.fastlane_cwd }}
+      env:
+        FIREBASE_GROUPS: ${{ inputs.tester_groups }}
+      run: bundle exec fastlane ios deploy_on_firebase
+
+    # ─── ARTIFACT UPLOAD (both modes) ──────────────────────────────────────
     - name: Upload IPA artifact
       uses: actions/upload-artifact@v4
       with: { name: firebase-ios-ipa, path: '**/build/**/*.ipa' }
