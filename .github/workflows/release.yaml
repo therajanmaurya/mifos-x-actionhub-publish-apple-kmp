@@ -116,7 +116,8 @@ jobs:
   stage-0-firebase:
     name: Stage 0 — Firebase App Distribution (iOS only)
     needs: [validate-secrets]
-    if: ${{ always() && !failure() && !cancelled() && inputs.platform == 'ios' && contains(fromJSON('["firebase","internal","beta","production"]'), inputs.starting_rung) }}
+    # 2026-06-19: tightened from contains(["firebase","internal","beta","production"]) to == 'firebase'. Stage 0 should only run when explicitly requested as the firebase rung (orchestrator's separate ios-firebase job handles the firebase+testflight case). Matches the publish-android-kmp@dev fix.
+    if: ${{ always() && !failure() && !cancelled() && inputs.platform == 'ios' && inputs.starting_rung == 'firebase' }}
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ios-firebase
     env:
