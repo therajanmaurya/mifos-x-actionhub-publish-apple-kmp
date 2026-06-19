@@ -55,6 +55,11 @@ on:
         required: false
         type: string
         default: ''
+      runner_pool:
+        description: 'JSON array of runner labels for ALL jobs. Default `["macos-14"]` (hosted Mac — required for Xcode). Pass `["self-hosted","macOS"]` to dispatch on a self-hosted Mac runner.'
+        required: false
+        type: string
+        default: '["macos-14"]'
 
     secrets:
       appstore_key_id:           { required: false }
@@ -76,7 +81,7 @@ jobs:
   validate-secrets:
     name: Preflight · Validate required secrets
     if: ${{ inputs.mode == 'standard' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_pool) }}
     steps:
       - name: Check apple/match secrets
         env:
@@ -112,7 +117,7 @@ jobs:
     name: Stage 0 — Firebase App Distribution (iOS only)
     needs: [validate-secrets]
     if: ${{ always() && !failure() && !cancelled() && inputs.platform == 'ios' && contains(fromJSON('["firebase","internal","beta","production"]'), inputs.starting_rung) }}
-    runs-on: macos-14
+    runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ios-firebase
     env:
       SOPS_AGE_KEY:          ${{ secrets.SOPS_AGE_KEY }}
@@ -131,7 +136,7 @@ jobs:
         run: ${{ inputs.pre_fastlane_script }}
 
       - name: Publish to Firebase
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.11
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.12
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
@@ -151,7 +156,7 @@ jobs:
     # so mac platform's stage-1 needs the explicit gate).
     needs: [validate-secrets, stage-0-firebase]
     if: ${{ always() && !failure() && !cancelled() && contains(fromJSON('["internal","beta","production"]'), inputs.starting_rung) }}
-    runs-on: macos-14
+    runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ${{ inputs.platform }}-testflight-internal
     env:
       SOPS_AGE_KEY:          ${{ secrets.SOPS_AGE_KEY }}
@@ -171,7 +176,7 @@ jobs:
 
       - name: Upload to TestFlight Internal (iOS)
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.11
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.12
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
@@ -192,7 +197,7 @@ jobs:
       # For now, dispatch with `mac_rung: skip` to avoid this code path.
       - name: Upload to Mac TestFlight Internal (macOS)
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.11
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.12
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -204,13 +209,13 @@ jobs:
     name: Stage 2 — Promote to TestFlight External (no rebuild)
     needs: [stage-1-testflight-internal]
     if: contains(fromJSON('["beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
-    runs-on: macos-14
+    runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ${{ inputs.platform }}-testflight-external
     steps:
       - uses: actions/checkout@v4
       - name: Promote iOS TF Internal → External
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.11
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.12
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -218,7 +223,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF Internal → External
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.11
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.12
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -229,13 +234,13 @@ jobs:
     name: Stage 3 — Promote to App Store (2 reviewers + wait timer, no rebuild)
     needs: [stage-2-promote-to-external-beta]
     if: inputs.starting_rung == 'production' && !cancelled() && !failure()
-    runs-on: macos-14
+    runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ${{ inputs.platform }}-app-store
     steps:
       - uses: actions/checkout@v4
       - name: Promote iOS TF → App Store
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.11
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.12
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -243,7 +248,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF → Mac App Store
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.11
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.12
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
