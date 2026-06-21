@@ -69,6 +69,13 @@ on:
       match_ssh_private_key:     { required: false }  # caller passes this name; mapped internally to match_git_private_key for composite actions (v2.0.7+ alias)
       firebase_creds:            { required: false }
       SOPS_AGE_KEY:              { required: false }
+      # macOS manual .p12 keychain signing (platform == 'mac') — consumed by macos-signing composite (Phase 5)
+      mac_signing_certificate:            { required: false }
+      mac_signing_certificate_password:   { required: false }
+      mac_installer_certificate:          { required: false }
+      mac_installer_certificate_password: { required: false }
+      mac_provisioning_profile_base64:    { required: false }
+      keychain_password:                  { required: false }
 
 concurrency:
   group: release-apple-${{ inputs.platform }}
@@ -196,15 +203,24 @@ jobs:
       # at this step with an "unexpected input(s)" error. Track at:
       #   https://github.com/therajanmaurya/mifos-x-actionhub-publish-apple-kmp/issues
       # For now, dispatch with `mac_rung: skip` to avoid this code path.
-      - name: Upload to Mac TestFlight Internal (macOS)
+      - name: Mac TestFlight Internal — .p12 keychain sign + Fastlane (macOS)
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.12
+        # full repo ref (not local ./) — local actions in a REUSABLE workflow resolve against the
+        # caller's repo, not this one; re-pinned to @v2.0.X in the Phase 6 cascade
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/macos-signing@dev
         with:
-          desktop_package_name:  ${{ inputs.package_name }}
-          appstore_key_id:       ${{ secrets.appstore_key_id }}
-          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
-          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
-          match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action takes match_git_private_key (even for non-iOS, leftover API)
+          desktop_package_name:               ${{ inputs.package_name }}
+          fastlane_lane:                       desktop_testflight
+          appstore_key_id:                     ${{ secrets.appstore_key_id }}
+          appstore_issuer_id:                  ${{ secrets.appstore_issuer_id }}
+          appstore_auth_key:                   ${{ secrets.appstore_auth_key }}
+          mac_signing_certificate:             ${{ secrets.mac_signing_certificate }}
+          mac_signing_certificate_password:    ${{ secrets.mac_signing_certificate_password }}
+          mac_installer_certificate:           ${{ secrets.mac_installer_certificate }}
+          mac_installer_certificate_password:  ${{ secrets.mac_installer_certificate_password }}
+          mac_provisioning_profile_base64:     ${{ secrets.mac_provisioning_profile_base64 }}
+          keychain_password:                   ${{ secrets.keychain_password }}
+          match_git_private_key:               ${{ secrets.match_ssh_private_key }}
 
   stage-2-promote-to-external-beta:
     name: Stage 2 — Promote to TestFlight External (no rebuild)

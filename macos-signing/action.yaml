@@ -1,0 +1,103 @@
+# Composite action: macOS .p12 keychain signing + Fastlane deploy
+# Ported from openMF/mifos-x-actionhub-publish-macos-on-appstore-testflight-kmp/action.yml
+# (multi-platform-release-completion epic, Phase 5 / AC12 / AC19, 2026-06-21).
+#
+# macOS uses MANUAL .p12 keychain import (NOT Match for the cert import) — the
+# composite owns the keychain lifecycle from base64 secret INPUTS, so it works in
+# STANDARD mode independent of the chain's fastlane_mode. The orchestrator `mac`
+# job forwards the 6 .p12 secrets explicitly; this composite materializes + imports
+# them, then runs the requested Fastlane mac lane.
+name: 'macOS .p12 Keychain Signing + Fastlane'
+description: 'Create an ephemeral keychain, import Apple Distribution + Mac Installer .p12 certs, embed the provisioning profile, then run a Fastlane mac lane.'
+
+inputs:
+  desktop_package_name:
+    description: 'macOS (cmp-desktop) module name'
+    required: false
+    default: 'cmp-desktop'
+  fastlane_lane:
+    description: 'Fastlane mac lane to run (desktop_testflight | desktop_beta | desktop_release)'
+    required: false
+    default: 'desktop_testflight'
+  appstore_key_id:
+    description: 'App Store Connect API key ID'
+    required: false
+  appstore_issuer_id:
+    description: 'App Store Connect issuer ID'
+    required: false
+  appstore_auth_key:
+    description: 'Base64 .p8 App Store Connect API key'
+    required: false
+  mac_signing_certificate:
+    description: 'Base64 macOS App Distribution cert (.p12)'
+    required: true
+  mac_signing_certificate_password:
+    description: 'Signing cert password'
+    required: true
+  mac_installer_certificate:
+    description: 'Base64 Mac Installer Distribution cert (.p12)'
+    required: true
+  mac_installer_certificate_password:
+    description: 'Installer cert password'
+    required: true
+  mac_provisioning_profile_base64:
+    description: 'Base64 .provisionprofile'
+    required: true
+  keychain_password:
+    description: 'Temporary keychain password'
+    required: true
+  match_git_private_key:
+    description: 'SSH key for Match repo (optional parity with iOS)'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Ruby (SHA-pinned)
+      uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+      with:
+        bundler-cache: true
+
+    - name: Create temporary keychain + import .p12 certs
+      shell: bash
+      env:
+        # All values come from GitHub Secrets (never committed) and are decoded to
+        # the runner's EPHEMERAL temp dir — nothing cert-related touches the repo tree.
+        SIGN_CERT_B64: ${{ inputs.mac_signing_certificate }}
+        INSTALLER_CERT_B64: ${{ inputs.mac_installer_certificate }}
+        PROFILE_B64: ${{ inputs.mac_provisioning_profile_base64 }}
+        APPSTORE_AUTH_KEY_B64: ${{ inputs.appstore_auth_key }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP" ~/Library/MobileDevice/Provisioning\ Profiles
+        echo "$SIGN_CERT_B64"      | base64 --decode > "$RUNNER_TEMP/mac_signing.p12"
+        echo "$INSTALLER_CERT_B64" | base64 --decode > "$RUNNER_TEMP/mac_installer.p12"
+        echo "$PROFILE_B64"        | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/macos.provisionprofile
+        # App Store Connect API key — only the path fastlane expects; decoded at runtime, cleaned up below
+        if [ -n "$APPSTORE_AUTH_KEY_B64" ]; then
+          mkdir -p secrets
+          echo "$APPSTORE_AUTH_KEY_B64" | base64 --decode > secrets/AuthKey.p8
+        fi
+        security create-keychain -p "${{ inputs.keychain_password }}" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "${{ inputs.keychain_password }}" build.keychain
+        security import "$RUNNER_TEMP/mac_signing.p12"   -k build.keychain -P "${{ inputs.mac_signing_certificate_password }}"   -T /usr/bin/codesign
+        security import "$RUNNER_TEMP/mac_installer.p12" -k build.keychain -P "${{ inputs.mac_installer_certificate_password }}" -T /usr/bin/productsign
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "${{ inputs.keychain_password }}" build.keychain
+        # transient .p12 no longer needed once imported into the keychain
+        rm -f "$RUNNER_TEMP/mac_signing.p12" "$RUNNER_TEMP/mac_installer.p12"
+
+    - name: Build + sign + upload via Fastlane mac lane
+      shell: bash
+      env:
+        APPSTORE_KEY_ID: ${{ inputs.appstore_key_id }}
+        APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
+        MATCH_GIT_PRIVATE_KEY: ${{ inputs.match_git_private_key }}
+      run: bundle exec fastlane mac ${{ inputs.fastlane_lane }}
+
+    - name: Cleanup keychain + transient secrets
+      shell: bash
+      if: always()
+      run: |
+        rm -f "$RUNNER_TEMP/mac_signing.p12" "$RUNNER_TEMP/mac_installer.p12" secrets/AuthKey.p8
+        security delete-keychain build.keychain || true
