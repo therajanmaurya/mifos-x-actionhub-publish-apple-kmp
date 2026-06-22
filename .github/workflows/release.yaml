@@ -4,10 +4,13 @@
 # Companion to existing iOS/macOS workflows. Existing workflows UNCHANGED.
 #
 # Promotion model (uniform across iOS + macOS, switched by `platform` input):
-#   Stage 0 (firebase)        — out-of-band dev/QA (iOS only; macOS skips)
 #   Stage 1 (internal)        — TestFlight Internal, 1 reviewer required
 #   Stage 2 (beta)            — TestFlight External (Apple beta review ~24h), 1 reviewer
-#   Stage 3 (production)      — App Store / Mac App Store (Apple review 1-3d), 2 reviewers + wait
+#   Stage 3 (production)      — App Store / Mac App Store (Apple review 1-3d), 1 reviewer
+#
+# 2026-06-22: Firebase App Distribution DROPPED for Apple — TestFlight Internal (instant,
+# no review) + External (beta) cover testing natively; Firebase was redundant for iOS.
+# Ladder is now testflight-internal → testflight-external → app-store.
 name: Release · Apple (ladder)
 run-name: "🍎 Release ${{ inputs.platform }} ${{ inputs.version_tag }} · ladder→${{ inputs.starting_rung }}"
 
@@ -82,12 +85,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Preflight: validate required secrets per rung — fail-fast in ~8s instead of
-  # dying deep in Xcode build / Fastlane Match after 10+ min with a confusing error.
-  # Skipped in mode=pre-materialized (consumer manages secrets via pre_fastlane_script).
+  # Preflight: validate required secrets — fail-fast in ~8s instead of dying deep in Xcode
+  # build / Fastlane Match after 10+ min. Runs in BOTH modes — secret verification is NEVER
+  # skipped (mirrors publish-android v2.0.16; "always verify, never skip" mandate, 2026-06-22).
   validate-secrets:
     name: Preflight · Validate required secrets
-    if: ${{ inputs.mode == 'standard' }}
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     steps:
       - name: Check apple/match secrets
@@ -97,7 +99,6 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
           match_password:        ${{ secrets.match_password }}
           match_ssh_private_key: ${{ secrets.match_ssh_private_key }}
-          firebase_creds:        ${{ secrets.firebase_creds }}
         run: |
           MISSING=()
           [[ -z "${appstore_key_id:-}" ]]       && MISSING+=("appstore_key_id")
@@ -105,10 +106,6 @@ jobs:
           [[ -z "${appstore_auth_key:-}" ]]     && MISSING+=("appstore_auth_key")
           [[ -z "${match_password:-}" ]]        && MISSING+=("match_password")
           [[ -z "${match_ssh_private_key:-}" ]] && MISSING+=("match_ssh_private_key")
-
-          if [[ "${{ inputs.platform }}" == "ios" && "${{ inputs.starting_rung }}" == "firebase" ]]; then
-            [[ -z "${firebase_creds:-}" ]] && MISSING+=("firebase_creds")
-          fi
 
           if [[ ${#MISSING[@]} -gt 0 ]]; then
             echo "❌ Apple ${{ inputs.platform }} ladder→${{ inputs.starting_rung }} requires these secrets, but they are MISSING:"
@@ -120,49 +117,56 @@ jobs:
           fi
           echo "✅ Apple ${{ inputs.platform }} secrets present"
 
-  stage-0-firebase:
-    name: Stage 0 — Firebase App Distribution (iOS only)
-    needs: [validate-secrets]
-    # 2026-06-19: tightened from contains(["firebase","internal","beta","production"]) to == 'firebase'. Stage 0 should only run when explicitly requested as the firebase rung (orchestrator's separate ios-firebase job handles the firebase+testflight case). Matches the publish-android-kmp@dev fix.
-    if: ${{ always() && !failure() && !cancelled() && inputs.platform == 'ios' && inputs.starting_rung == 'firebase' }}
+  # Store-listing preflight — CI mirror of /release STEP 1.7. Validates the App Store listing
+  # (name ≤30 / subtitle ≤30 / keywords ≤100 / description ≤4000) is present + within limits
+  # BEFORE the gated Xcode build, so App Store Connect never rejects deliver. iOS only (skips mac).
+  validate-store-listing:
+    name: Preflight · Store Listing
+    if: ${{ inputs.platform == 'ios' }}
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
-    environment: ios-firebase
-    env:
-      SOPS_AGE_KEY:          ${{ secrets.SOPS_AGE_KEY }}
-      APPSTORE_KEY_ID:       ${{ secrets.appstore_key_id }}
-      APPSTORE_ISSUER_ID:    ${{ secrets.appstore_issuer_id }}
-      APPSTORE_AUTH_KEY_B64: ${{ secrets.appstore_auth_key }}
-      MATCH_PASSWORD:        ${{ secrets.match_password }}
-      MATCH_GIT_PRIVATE_KEY: ${{ secrets.match_ssh_private_key }}
-      FIREBASE_CREDS_B64:    ${{ secrets.firebase_creds }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Pre-fastlane setup (consumer-provided, pre-materialized mode)
         if: ${{ inputs.mode == 'pre-materialized' && inputs.pre_fastlane_script != '' }}
         shell: bash
         run: ${{ inputs.pre_fastlane_script }}
-
-      - name: Publish to Firebase
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.12
-        with:
-          ios_package_name:      ${{ inputs.package_name }}
-          shared_module:         ${{ inputs.shared_module }}
-          mode:                  ${{ inputs.mode }}
-          fastlane_cwd:          ${{ inputs.fastlane_cwd }}
-          appstore_key_id:       ${{ secrets.appstore_key_id }}
-          appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
-          appstore_auth_key:     ${{ secrets.appstore_auth_key }}
-          match_password:        ${{ secrets.match_password }}
-          match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action expects "git" name; caller passes "ssh" — rename here
-          firebase_creds:        ${{ secrets.firebase_creds }}
-          tester_groups:         ${{ inputs.tester_groups }}
+      - name: Validate App Store listing metadata
+        shell: bash
+        run: |
+          DIR=""
+          for D in deployment/ios/appstore/metadata/en-US deployment/ios/appstore/metadata/en-GB fastlane/metadata/en-US fastlane/metadata/en-GB; do
+            [ -d "$D" ] && DIR="$D" && break
+          done
+          if [ -z "$DIR" ]; then
+            echo "❌ No App Store listing metadata (deployment/ios/appstore/metadata/<locale>)."
+            echo "   App Store Connect rejects submission without name/description. Generate via /release STEP 1.7."
+            exit 1
+          fi
+          echo "🔎 App Store listing preflight · $DIR"; echo ""
+          FAIL=0
+          clen() { if [ -f "$1" ]; then printf '%s' "$(cat "$1")" | wc -m | tr -d ' '; else echo 0; fi; }
+          check() {
+            local file="$DIR/$1" max="$2" label="$3" sev="${4:-hard}" len
+            if [ ! -f "$file" ]; then [ "$sev" = hard ] && { echo "❌ $label — MISSING ($1)"; FAIL=1; } || echo "⚠️  $label — missing ($1)"; return; fi
+            len=$(clen "$file")
+            if [ "$len" -eq 0 ]; then [ "$sev" = hard ] && { echo "❌ $label — EMPTY ($1)"; FAIL=1; } || echo "⚠️  $label — empty ($1)"; return; fi
+            if [ "$len" -gt "$max" ]; then echo "❌ $label — $len chars > $max limit ($1)"; FAIL=1; return; fi
+            echo "✅ $label — $len/$max chars"
+          }
+          check name.txt              30 "Name"             hard
+          check subtitle.txt          30 "Subtitle"         hard
+          check keywords.txt         100 "Keywords (total)" hard
+          check description.txt      4000 "Description"      hard
+          check promotional_text.txt 170 "Promotional text" soft
+          echo ""
+          if [ "$FAIL" -ne 0 ]; then echo "❌ App Store listing preflight FAILED — fix the fields above before deploying."; exit 1; fi
+          echo "✅ App Store listing preflight PASSED"
 
   stage-1-testflight-internal:
     name: Stage 1 — TestFlight Internal
-    # Depend on validate-secrets explicitly (stage-0 only runs for ios platform,
-    # so mac platform's stage-1 needs the explicit gate).
-    needs: [validate-secrets, stage-0-firebase]
+    # Firebase is DROPPED for Apple (2026-06-22) — Stage 1 depends only on the two preflights.
+    # validate-store-listing skips for mac (iOS-only); stage-1's always() handles the skip.
+    needs: [validate-secrets, validate-store-listing]
     if: ${{ always() && !failure() && !cancelled() && contains(fromJSON('["internal","beta","production"]'), inputs.starting_rung) }}
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ${{ inputs.platform }}-testflight-internal
@@ -248,7 +252,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
 
   stage-3-promote-to-app-store:
-    name: Stage 3 — Promote to App Store (2 reviewers + wait timer, no rebuild)
+    name: Stage 3 — Promote to App Store (approval required, no rebuild)
     needs: [stage-2-promote-to-external-beta]
     if: inputs.starting_rung == 'production' && !cancelled() && !failure()
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
