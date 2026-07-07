@@ -63,6 +63,23 @@ on:
         required: false
         type: string
         default: '["macos-14"]'
+      # ── Unified parameterized lanes (Phase 2, 2026-07) ─────────────────────────────
+      # Consumer's Fastfile exposes `deployIpaOnFirebase(flavor:, build_type:)`,
+      # `beta(flavor:, build_type:)`, `release(flavor:, build_type:)` — the consumer's
+      # variant_resolver derives the iOS Xcode scheme as `{flavor}{BuildType}`
+      # (e.g. `prodRelease`, `demoRelease`, `demoDebug`). Threading these two additive
+      # inputs lets a single reusable workflow ship any flavor × build_type combo.
+      # Empty `flavor` (default) reproduces today's prod scheme behavior exactly.
+      flavor:
+        description: 'Product flavor for parameterized fastlane lanes (empty → prod default; e.g. `demo`, `prod`). Consumer variant_resolver derives iOS scheme as `{flavor}{BuildType}`.'
+        required: false
+        type: string
+        default: ''
+      build_type:
+        description: 'Build type for parameterized fastlane lanes (`release` | `debug`). Consumer variant_resolver derives iOS scheme as `{flavor}{BuildType}`.'
+        required: false
+        type: string
+        default: 'release'
 
     secrets:
       appstore_key_id:           { required: false }
@@ -178,6 +195,13 @@ jobs:
       MATCH_PASSWORD:        ${{ secrets.match_password }}
       MATCH_GIT_PRIVATE_KEY: ${{ secrets.match_ssh_private_key }}
       FIREBASE_CREDS_B64:    ${{ secrets.firebase_creds }}
+      # Phase-2 unified-lane params (2026-07). Consumer variant_resolver derives
+      # the iOS Xcode scheme as `{flavor}{BuildType}` (prodRelease | demoRelease |
+      # demoDebug …). Env-level threading is a belt-and-braces channel — fastlane
+      # picks these up from ENV even before composite actions accept them as `with:`
+      # inputs, so `flavor=''` (prod default) fully reproduces prior behavior.
+      FLAVOR:                ${{ inputs.flavor || 'prod' }}
+      BUILD_TYPE:            ${{ inputs.build_type }}
     steps:
       - uses: actions/checkout@v4
 
@@ -199,6 +223,12 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
           match_password:        ${{ secrets.match_password }}
           match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action expects "git" name; caller passes "ssh" — rename here
+          # Unified-lane thread — composite action forwards to `fastlane ios <lane> flavor:<F> build_type:<BT>`
+          # so the Fastfile's variant_resolver picks `{flavor}{BuildType}` as the Xcode scheme.
+          # Empty flavor ('') passed here means the lane falls back to `prod` on the consumer side —
+          # matching the pre-Phase-2 hardcoded prodRelease behavior.
+          flavor:                ${{ inputs.flavor }}
+          build_type:            ${{ inputs.build_type }}
       # Mac TestFlight Internal — the action requires manual signing certs
       # (NOT Match-based). Required inputs (bundle_identifier, mac_signing_*,
       # mac_installer_*, mac_provisioning_profile_base64, keychain_password)
@@ -225,6 +255,11 @@ jobs:
           mac_provisioning_profile_base64:     ${{ secrets.mac_provisioning_profile_base64 }}
           keychain_password:                   ${{ secrets.keychain_password }}
           match_git_private_key:               ${{ secrets.match_ssh_private_key }}
+          # Unified-lane thread (Phase 2). macos-signing forwards to
+          # `bundle exec fastlane mac <fastlane_lane> flavor:<F> build_type:<BT>`.
+          # Empty flavor keeps the prior single-flavor mac build path unchanged.
+          flavor:                              ${{ inputs.flavor }}
+          build_type:                          ${{ inputs.build_type }}
 
   stage-2-promote-to-external-beta:
     name: Stage 2 — Promote to TestFlight External (no rebuild)
@@ -232,6 +267,12 @@ jobs:
     if: contains(fromJSON('["beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ${{ inputs.platform }}-testflight-external
+    env:
+      # Phase-2 unified-lane params — the `beta(flavor:, build_type:)` lane on the
+      # consumer side may look up per-flavor app_identifier / metadata even though
+      # promotion doesn't rebuild. Env-thread is defensive; empty flavor → prod.
+      FLAVOR:     ${{ inputs.flavor || 'prod' }}
+      BUILD_TYPE: ${{ inputs.build_type }}
     steps:
       - uses: actions/checkout@v4
       - name: Promote iOS TF Internal → External
@@ -242,6 +283,9 @@ jobs:
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          # Unified-lane thread — forwarded to `fastlane ios beta flavor:<F> build_type:<BT>`.
+          flavor:                ${{ inputs.flavor }}
+          build_type:            ${{ inputs.build_type }}
       - name: Promote Mac TF Internal → External
         if: inputs.platform == 'mac'
         uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.12
@@ -250,6 +294,9 @@ jobs:
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          # Unified-lane thread — forwarded to `fastlane mac beta flavor:<F> build_type:<BT>`.
+          flavor:                ${{ inputs.flavor }}
+          build_type:            ${{ inputs.build_type }}
 
   stage-3-promote-to-app-store:
     name: Stage 3 — Promote to App Store (approval required, no rebuild)
@@ -257,6 +304,12 @@ jobs:
     if: inputs.starting_rung == 'production' && !cancelled() && !failure()
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     environment: ${{ inputs.platform }}-app-store
+    env:
+      # Phase-2 unified-lane params — the `release(flavor:, build_type:)` lane on the
+      # consumer side resolves per-flavor App Store Connect app_identifier. Env-thread
+      # is defensive; empty flavor → prod default (matches pre-Phase-2 behavior).
+      FLAVOR:     ${{ inputs.flavor || 'prod' }}
+      BUILD_TYPE: ${{ inputs.build_type }}
     steps:
       - uses: actions/checkout@v4
       - name: Promote iOS TF → App Store
@@ -267,6 +320,9 @@ jobs:
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          # Unified-lane thread — forwarded to `fastlane ios release flavor:<F> build_type:<BT>`.
+          flavor:                ${{ inputs.flavor }}
+          build_type:            ${{ inputs.build_type }}
       - name: Promote Mac TF → Mac App Store
         if: inputs.platform == 'mac'
         uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.12
@@ -275,3 +331,6 @@ jobs:
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
+          # Unified-lane thread — forwarded to `fastlane mac release flavor:<F> build_type:<BT>`.
+          flavor:                ${{ inputs.flavor }}
+          build_type:            ${{ inputs.build_type }}
