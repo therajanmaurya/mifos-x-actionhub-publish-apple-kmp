@@ -241,7 +241,7 @@ jobs:
         if: inputs.platform == 'mac'
         # full repo ref (not local ./) — local actions in a REUSABLE workflow resolve against the
         # caller's repo, not this one; re-pinned to @v2.0.X in the Phase 6 cascade
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/macos-signing@dev
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/macos-signing@v2.0.17
         with:
           desktop_package_name:               ${{ inputs.package_name }}
           fastlane_lane:                       desktop_testflight
@@ -255,6 +255,8 @@ jobs:
           mac_provisioning_profile_base64:     ${{ secrets.mac_provisioning_profile_base64 }}
           keychain_password:                   ${{ secrets.keychain_password }}
           match_git_private_key:               ${{ secrets.match_ssh_private_key }}
+          match_password:                      ${{ secrets.match_password }}
+          fastlane_cwd:                        ${{ inputs.fastlane_cwd }}
           # Unified-lane thread (Phase 2). macos-signing forwards to
           # `bundle exec fastlane mac <fastlane_lane> flavor:<F> build_type:<BT>`.
           # Empty flavor keeps the prior single-flavor mac build path unchanged.
