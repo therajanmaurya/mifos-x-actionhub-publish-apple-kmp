@@ -245,6 +245,11 @@ jobs:
         with:
           desktop_package_name:               ${{ inputs.package_name }}
           fastlane_lane:                       desktop_testflight
+          # Run the composite in the caller's mode. In pre-materialized mode the
+          # pre-fastlane setup step (above, no platform guard) already materialized
+          # the .p8 + local.properties via the consumer script — the composite just
+          # runs the mac lane. Mirrors ios-testflight-internal.
+          mode:                                ${{ inputs.mode }}
           appstore_key_id:                     ${{ secrets.appstore_key_id }}
           appstore_issuer_id:                  ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:                   ${{ secrets.appstore_auth_key }}
