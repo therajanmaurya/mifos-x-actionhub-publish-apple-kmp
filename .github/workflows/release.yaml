@@ -136,7 +136,7 @@ jobs:
         run: ${{ inputs.pre_fastlane_script }}
 
       - name: Publish to Firebase
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.12
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-firebase-distribution@v2.0.16
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload to TestFlight Internal (iOS)
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.12
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.16
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
@@ -187,23 +187,21 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
           match_password:        ${{ secrets.match_password }}
           match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action expects "git" name; caller passes "ssh" — rename here
-      # Mac TestFlight Internal — the action requires manual signing certs
-      # (NOT Match-based). Required inputs (bundle_identifier, mac_signing_*,
-      # mac_installer_*, mac_provisioning_profile_base64, keychain_password)
-      # need to be passed by the orchestrator from the consumer's GHA secrets.
-      # Until the orchestrator + consumer wire those up, Mac stage will halt
-      # at this step with an "unexpected input(s)" error. Track at:
-      #   https://github.com/therajanmaurya/mifos-x-actionhub-publish-apple-kmp/issues
-      # For now, dispatch with `mac_rung: skip` to avoid this code path.
+      # Mac TestFlight Internal — signs via Fastlane Match (like iOS). The macOS
+      # Distribution + Mac Installer Distribution certs are Match-managed
+      # (openMF/ios-provisioning-profile); the action fetches them with
+      # `match … platform:macos readonly:true` — no manual .p12 secrets.
       - name: Upload to Mac TestFlight Internal (macOS)
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.12
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-testflight-internal@v2.0.16
         with:
           desktop_package_name:  ${{ inputs.package_name }}
+          fastlane_cwd:          ${{ inputs.fastlane_cwd }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
           appstore_issuer_id:    ${{ secrets.appstore_issuer_id }}
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
-          match_git_private_key: ${{ secrets.match_ssh_private_key }}  # action takes match_git_private_key (even for non-iOS, leftover API)
+          match_password:        ${{ secrets.match_password }}
+          match_git_private_key: ${{ secrets.match_ssh_private_key }}
 
   stage-2-promote-to-external-beta:
     name: Stage 2 — Promote to TestFlight External (no rebuild)
@@ -215,7 +213,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF Internal → External
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.12
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.16
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -223,7 +221,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF Internal → External
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.12
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.16
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -240,7 +238,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF → App Store
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.12
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.16
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -248,7 +246,7 @@ jobs:
           appstore_auth_key:     ${{ secrets.appstore_auth_key }}
       - name: Promote Mac TF → Mac App Store
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.12
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.16
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
