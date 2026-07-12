@@ -229,6 +229,15 @@ jobs:
           # matching the pre-Phase-2 hardcoded prodRelease behavior.
           flavor:                ${{ inputs.flavor }}
           build_type:            ${{ inputs.build_type }}
+
+      - name: Upload IPA as release asset (iOS)
+        if: ${{ always() && inputs.platform == 'ios' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-asset-ios-ipa
+          path: '**/*.ipa'
+          if-no-files-found: warn
+
       # Mac TestFlight Internal — the action requires manual signing certs
       # (NOT Match-based). Required inputs (bundle_identifier, mac_signing_*,
       # mac_installer_*, mac_provisioning_profile_base64, keychain_password)
@@ -267,6 +276,14 @@ jobs:
           # Empty flavor keeps the prior single-flavor mac build path unchanged.
           flavor:                              ${{ inputs.flavor }}
           build_type:                          ${{ inputs.build_type }}
+
+      - name: Upload PKG as release asset (macOS)
+        if: ${{ always() && inputs.platform == 'mac' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-asset-mac-pkg
+          path: '**/*.pkg'
+          if-no-files-found: warn
 
   stage-2-promote-to-external-beta:
     name: Stage 2 — Promote to TestFlight External (no rebuild)
