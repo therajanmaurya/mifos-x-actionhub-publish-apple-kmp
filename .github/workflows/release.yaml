@@ -106,7 +106,7 @@ jobs:
   # build / Fastlane Match after 10+ min. Runs in BOTH modes — secret verification is NEVER
   # skipped (mirrors publish-android v2.0.16; "always verify, never skip" mandate, 2026-06-22).
   validate-secrets:
-    name: Preflight · Validate required secrets
+    name: Preflight · Secrets
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     steps:
       - name: Check apple/match secrets
@@ -138,7 +138,7 @@ jobs:
   # (name ≤30 / subtitle ≤30 / keywords ≤100 / description ≤4000) is present + within limits
   # BEFORE the gated Xcode build, so App Store Connect never rejects deliver. iOS only (skips mac).
   validate-store-listing:
-    name: Preflight · Store Listing
+    name: Preflight · Listing
     if: ${{ inputs.platform == 'ios' }}
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     steps:
@@ -180,7 +180,7 @@ jobs:
           echo "✅ App Store listing preflight PASSED"
 
   stage-1-testflight-internal:
-    name: Stage 1 — TestFlight Internal
+    name: TestFlight · Internal
     # Firebase is DROPPED for Apple (2026-06-22) — Stage 1 depends only on the two preflights.
     # validate-store-listing skips for mac (iOS-only); stage-1's always() handles the skip.
     needs: [validate-secrets, validate-store-listing]
@@ -286,7 +286,7 @@ jobs:
           if-no-files-found: warn
 
   stage-2-promote-to-external-beta:
-    name: Stage 2 — Promote to TestFlight External (no rebuild)
+    name: TestFlight · External
     needs: [stage-1-testflight-internal]
     if: contains(fromJSON('["beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
@@ -323,7 +323,7 @@ jobs:
           build_type:            ${{ inputs.build_type }}
 
   stage-3-promote-to-app-store:
-    name: Stage 3 — Promote to App Store (approval required, no rebuild)
+    name: App Store
     needs: [stage-2-promote-to-external-beta]
     if: inputs.starting_rung == 'production' && !cancelled() && !failure()
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
