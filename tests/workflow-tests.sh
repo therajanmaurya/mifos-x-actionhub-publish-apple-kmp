@@ -48,7 +48,7 @@ py() { python3 -c "$1"; }
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 ALL_SUBDIRS=(
-    ios-app-store ios-build ios-firebase-distribution
+    ios-app-store ios-build
     ios-promote-to-app-store ios-promote-to-testflight-external ios-testflight-internal
     mac-app-store mac-build mac-dmg-notarized mac-dmg-unsigned
     mac-promote-to-app-store mac-promote-to-testflight-external mac-testflight-internal
@@ -56,7 +56,6 @@ ALL_SUBDIRS=(
 
 # Actions actively referenced by release.yaml's stages
 ACTIVE_REFS=(
-    ios-firebase-distribution
     ios-testflight-internal mac-testflight-internal
     ios-promote-to-testflight-external mac-promote-to-testflight-external
     ios-promote-to-app-store mac-promote-to-app-store
@@ -121,19 +120,19 @@ run_test "T12: All 5 expected jobs present" "py '
 import yaml
 d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
 got = set(d[\"jobs\"].keys())
-exp = set([\"validate-secrets\",\"stage-0-firebase\",\"stage-1-testflight-internal\",\"stage-2-promote-to-external-beta\",\"stage-3-promote-to-app-store\"])
+exp = set([\"validate-secrets\",\"validate-store-listing\",\"stage-1-testflight-internal\",\"stage-2-promote-to-external-beta\",\"stage-3-promote-to-app-store\"])
 assert got == exp, \"diff: \" + str(got.symmetric_difference(exp))
 '"
-run_test "T13: stage-0 depends on validate-secrets" "py '
+run_test "T13: ladder bottom (stage-1) depends on validate-secrets" "py '
 import yaml
 d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
-assert \"validate-secrets\" in d[\"jobs\"][\"stage-0-firebase\"][\"needs\"]
+assert \"validate-secrets\" in d[\"jobs\"][\"stage-1-testflight-internal\"][\"needs\"]
 '"
-run_test "T14: stage-1 depends on stage-0 (sequential)" "py '
+run_test "T14: stage-1 also gated on validate-store-listing" "py '
 import yaml
 d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
 needs = d[\"jobs\"][\"stage-1-testflight-internal\"][\"needs\"]
-assert \"stage-0-firebase\" in needs
+assert \"validate-store-listing\" in needs, needs
 '"
 run_test "T15: stage-2 depends on stage-1" "py '
 import yaml
@@ -149,14 +148,10 @@ echo
 
 # ── Tier 4: Per-platform per-stage routing ───────────────────────────────────
 echo "── Tier 4: Per-platform per-stage routing ──"
-run_test "T17: stage-0-firebase is iOS-only (no Mac equivalent — Firebase iOS Distribution)" "py '
-import yaml
-d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
-cond = d[\"jobs\"][\"stage-0-firebase\"][\"if\"]
-assert \"inputs.platform == \\\"ios\\\"\" in cond or \"inputs.platform == \\\"\\047ios\\047\\\"\" in cond or \"platform == \\047ios\\047\" in cond
-uses = [s[\"uses\"] for s in d[\"jobs\"][\"stage-0-firebase\"][\"steps\"] if isinstance(s,dict) and \"publish-apple-kmp/\" in str(s.get(\"uses\",\"\"))]
-assert len(uses) == 1 and \"/ios-firebase-distribution@\" in uses[0], \"got: \" + str(uses)
-'"
+# T17 removed with stage-0-firebase: the Firebase rung was dropped from the ladder in
+# 95a53f8 (Android-mirrored TF-internal -> external -> app-store), so there is no
+# stage-0 job and no ios-firebase-distribution action left to route to.
+
 # Tier 4 stage routing — assert per-stage iOS+Mac pair routing (version-agnostic;
 # Tier 12 T50 separately asserts the version pin is consistent + not frozen at v2.0.0)
 for STAGE_PAIR in "stage-1-testflight-internal:testflight-internal" "stage-2-promote-to-external-beta:promote-to-testflight-external" "stage-3-promote-to-app-store:promote-to-app-store"; do
@@ -208,7 +203,7 @@ done
 # Per-platform contract assertions — iOS actions accept ios_package_name,
 # Mac actions accept desktop_package_name (legacy name, will be renamed to
 # mac_package_name in a future PR).
-for A in ios-firebase-distribution ios-testflight-internal ios-promote-to-testflight-external ios-promote-to-app-store; do
+for A in ios-testflight-internal ios-promote-to-testflight-external ios-promote-to-app-store; do
     run_test "T4x:  $A accepts ios_package_name" "py '
 import yaml
 d = yaml.safe_load(open(\"$A/action.yaml\"))
@@ -250,11 +245,6 @@ echo
 
 # ── Tier 8: Stage-conditional logic (rung + platform) ────────────────────────
 echo "── Tier 8: Stage-conditional logic ──"
-run_test "T39: stage-0-firebase if includes 'firebase' (ladder bottom)" "py '
-import yaml
-d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
-assert \"firebase\" in d[\"jobs\"][\"stage-0-firebase\"][\"if\"]
-'"
 run_test "T40: stage-1-testflight-internal if covers {internal, beta, production}" "py '
 import yaml
 d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
@@ -313,7 +303,7 @@ for s in d[\"jobs\"][\"stage-1-testflight-internal\"].get(\"steps\", []):
 run_test "T45: BUG FIXED — release.yaml renames match_ssh → match_git when passing to actions (v2.0.7+)" "py '
 import yaml
 # Actions still declare match_git_private_key
-for a_name in [\"ios-firebase-distribution\",\"ios-testflight-internal\",\"mac-testflight-internal\"]:
+for a_name in [\"ios-testflight-internal\",\"mac-testflight-internal\"]:
     a = yaml.safe_load(open(f\"{a_name}/action.yaml\"))
     declared = set(a.get(\"inputs\", {}).keys())
     assert \"match_git_private_key\" in declared, f\"{a_name} no longer takes match_git_private_key — interface changed?\"
@@ -327,7 +317,7 @@ for j_name, j in d[\"jobs\"].items():
             # match_git_private_key should be present (renamed correctly)
             uses_action = s[\"uses\"].split(\"/\")[-1].split(\"@\")[0]
             # mac-promote-stages and ios-promote-to-app-store may not need match key
-            if uses_action in [\"ios-firebase-distribution\",\"ios-testflight-internal\",\"mac-testflight-internal\"]:
+            if uses_action in [\"ios-testflight-internal\",\"mac-testflight-internal\"]:
                 assert \"match_git_private_key\" in s.get(\"with\", {}), j_name + \" missing match_git_private_key after rename for \" + uses_action
 '"
 run_test "T46: KNOWN BUG — inconsistent platform package_name naming: ios_package_name vs desktop_package_name (should be mac_package_name)" "py '

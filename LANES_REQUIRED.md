@@ -9,7 +9,6 @@ Reference implementations are maintained in [`openMF/kmp-project-template/deploy
 | Lane | Sub-action | What the lane must do |
 |---|---|---|
 | `ios beta` | `ios-testflight-internal/` | Build signed IPA via Match (appstore profile) → upload to TestFlight |
-| `ios deploy_on_firebase` | `ios-firebase-distribution/` | Build signed IPA → upload to Firebase App Distribution |
 | `ios release` | `ios-app-store/` | Full rebuild → submit to App Store review |
 | `ios build_ios` | `ios-build/` (Debug) | Build unsigned IPA (no codesign) |
 | `ios build_signed_ios` | `ios-build/` (Release) | Build signed IPA via Match |

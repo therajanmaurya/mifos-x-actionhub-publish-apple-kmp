@@ -26,7 +26,6 @@ jobs:
       matrix:
         subdir:
           - ios-build
-          - ios-firebase-distribution
           - ios-testflight-internal
           - ios-promote-to-testflight-external
           - ios-app-store

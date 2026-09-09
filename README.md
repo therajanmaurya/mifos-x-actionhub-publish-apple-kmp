@@ -26,7 +26,6 @@ Co-locating them is the only way to share this infrastructure without cross-repo
 | Sub-action | Stage | Purpose |
 |---|---|---|
 | [`ios-build/`](./ios-build/) | — | Build iOS IPA (signed or unsigned) |
-| [`ios-firebase-distribution/`](./ios-firebase-distribution/) | **Stage 0** — dev/QA | Upload IPA to Firebase App Distribution |
 | [`ios-testflight-internal/`](./ios-testflight-internal/) | **Stage 1** — internal | Build + upload IPA to TestFlight (internal testers see it immediately) |
 | [`ios-promote-to-testflight-external/`](./ios-promote-to-testflight-external/) | **Stage 2** — external beta | Distribute existing TF build to external testers (Apple beta review, ~24h). No rebuild. 🆕 |
 | [`ios-app-store/`](./ios-app-store/) | **Stage 3** — production (rebuild) | Full rebuild + App Store submit. Used for hotfixes. |
@@ -54,7 +53,7 @@ Co-locating them is the only way to share this infrastructure without cross-repo
 ├── action.yaml                                 ← root composite (defaults)
 ├── .github/workflows/{pr-check,release}.yaml
 │
-├── ios-build/, ios-firebase-distribution/,
+├── ios-build/,
 ├── ios-testflight-internal/, ios-promote-to-testflight-external/,
 ├── ios-app-store/, ios-promote-to-app-store/   ← 6 iOS sub-actions
 │
@@ -120,7 +119,7 @@ For the **full ladder run with approval gates + supersede semantics**, see the o
 | Old repo | New path |
 |---|---|
 | `openMF/mifos-x-actionhub-build-ios-app@v1.0.14` | `./ios-build/@v2.0.0` |
-| `openMF/mifos-x-actionhub-publish-ios-on-firebase@v1.0.14` | `./ios-firebase-distribution/@v2.0.0` |
+| `openMF/mifos-x-actionhub-publish-ios-on-firebase@v1.0.14` | _(dropped — see CHANGELOG)_ |
 | `openMF/mifos-x-actionhub-publish-ios-on-appstore-testflight@v1.0.14` | `./ios-testflight-internal/@v2.0.0` |
 | `openMF/mifos-x-actionhub-publish-ios-on-appstore@v1.0.14` | `./ios-app-store/@v2.0.0` |
 | `openMF/mifos-x-actionhub-publish-macos-on-appstore-testflight-kmp@v1.0.14` | `./mac-testflight-internal/@v2.0.0` |
