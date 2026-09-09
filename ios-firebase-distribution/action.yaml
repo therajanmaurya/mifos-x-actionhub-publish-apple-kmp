@@ -54,6 +54,7 @@ runs:
         APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
         APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
         FIREBASE_GROUPS:    ${{ inputs.tester_groups }}
+      working-directory: ${{ inputs.fastlane_cwd }}
       run: bundle exec fastlane ios deploy_on_firebase
 
     - name: Cleanup (standard mode)

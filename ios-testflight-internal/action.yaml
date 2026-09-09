@@ -41,6 +41,7 @@ runs:
         MATCH_PASSWORD:     ${{ inputs.match_password }}
         APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
         APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
+      working-directory: ${{ inputs.fastlane_cwd }}
       run: bundle exec fastlane ios beta
 
     - name: Cleanup (standard mode)
