@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload to TestFlight Internal (iOS)
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.22
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-testflight-internal@v2.0.23
         with:
           ios_package_name:      ${{ inputs.package_name }}
           shared_module:         ${{ inputs.shared_module }}
@@ -250,7 +250,7 @@ jobs:
         if: inputs.platform == 'mac'
         # full repo ref (not local ./) — local actions in a REUSABLE workflow resolve against the
         # caller's repo, not this one; re-pinned to @v2.0.X in the Phase 6 cascade
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/macos-signing@v2.0.22
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/macos-signing@v2.0.23
         with:
           desktop_package_name:               ${{ inputs.package_name }}
           fastlane_lane:                       desktop_testflight
@@ -301,7 +301,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF Internal → External
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.22
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.23
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -312,7 +312,7 @@ jobs:
           # from a variant. Passing them was a silent no-op (GitHub drops undeclared inputs).
       - name: Promote Mac TF Internal → External
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.22
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-testflight-external@v2.0.23
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -338,7 +338,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Promote iOS TF → App Store
         if: inputs.platform == 'ios'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.22
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.23
         with:
           ios_package_name:      ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
@@ -349,7 +349,7 @@ jobs:
           # from a variant. Passing them was a silent no-op (GitHub drops undeclared inputs).
       - name: Promote Mac TF → Mac App Store
         if: inputs.platform == 'mac'
-        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.22
+        uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/mac-promote-to-app-store@v2.0.23
         with:
           desktop_package_name:  ${{ inputs.package_name }}
           appstore_key_id:       ${{ secrets.appstore_key_id }}
