@@ -16,6 +16,8 @@ inputs:
   appstore_auth_key:     { required: false, default: '', description: 'Ignored when mode=pre-materialized.' }
   match_password:        { required: false, default: '', description: 'Ignored when mode=pre-materialized.' }
   match_git_private_key: { required: false, default: '', description: 'Ignored when mode=pre-materialized.' }
+  flavor:                { required: false, default: '', description: 'Product flavor threaded into the ios lane (empty → prod).' }
+  build_type:            { required: false, default: '', description: 'Build type threaded into the ios lane (empty → release).' }
 
 runs:
   using: 'composite'
@@ -41,7 +43,14 @@ runs:
         MATCH_PASSWORD:     ${{ inputs.match_password }}
         APPSTORE_KEY_ID:    ${{ inputs.appstore_key_id }}
         APPSTORE_ISSUER_ID: ${{ inputs.appstore_issuer_id }}
-      run: bundle exec fastlane ios beta
+        FLAVOR:             ${{ inputs.flavor }}
+        BUILD_TYPE:         ${{ inputs.build_type }}
+      working-directory: ${{ inputs.fastlane_cwd }}
+      run: |
+        ARGS=""
+        [ -n "$FLAVOR" ]     && ARGS="$ARGS flavor:$FLAVOR"
+        [ -n "$BUILD_TYPE" ] && ARGS="$ARGS build_type:$BUILD_TYPE"
+        bundle exec fastlane ios beta $ARGS
 
     - name: Cleanup (standard mode)
       if: ${{ always() && inputs.mode == 'standard' }}
@@ -53,4 +62,11 @@ runs:
       if: ${{ inputs.mode == 'pre-materialized' }}
       shell: bash
       working-directory: ${{ inputs.fastlane_cwd }}
-      run: bundle exec fastlane ios beta
+      env:
+        FLAVOR:     ${{ inputs.flavor }}
+        BUILD_TYPE: ${{ inputs.build_type }}
+      run: |
+        ARGS=""
+        [ -n "$FLAVOR" ]     && ARGS="$ARGS flavor:$FLAVOR"
+        [ -n "$BUILD_TYPE" ] && ARGS="$ARGS build_type:$BUILD_TYPE"
+        bundle exec fastlane ios beta $ARGS

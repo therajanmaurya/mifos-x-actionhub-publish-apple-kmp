@@ -1,5 +1,14 @@
 # Changelog
 
+## Removed
+
+- `ios-firebase-distribution/` — the Firebase rung was dropped from the release ladder in
+  95a53f8 (Android-mirrored `TF-internal → external → app-store`), leaving the action
+  unreferenced by `release.yaml`. The directory, its `pr-check` matrix entry, its tests
+  (T17, T39, and the stage-0 assertions in T12–T14) and its docs rows are removed here.
+  Consumers pinning `ios-firebase-distribution@v2.0.x` are unaffected: tags are immutable
+  and every release up to v2.0.22 still contains the action.
+
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## v2.0.0 — Constellation consolidation (planned)

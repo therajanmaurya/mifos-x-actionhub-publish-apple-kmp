@@ -5,9 +5,9 @@ name: PR Check
 
 on:
   pull_request:
-    branches: [main]
+    branches: [dev]
   push:
-    branches: [main]
+    branches: [dev]
 
 jobs:
   actionlint:
@@ -26,7 +26,6 @@ jobs:
       matrix:
         subdir:
           - ios-build
-          - ios-firebase-distribution
           - ios-testflight-internal
           - ios-promote-to-testflight-external
           - ios-app-store
