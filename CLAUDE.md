@@ -55,7 +55,7 @@ This repo serves **both iOS and macOS** via a single `platform` input
 | Major (`v2.X.X` → `v3.0.0`) | breaking — secret renamed, rung removed, platform input schema change |
 
 After merging:
-1. Tag `v2.0.{X+1}` on `main`
+1. Tag `v2.0.{X+1}` on `dev`
 2. Bump orchestrator's `publish-apple-kmp/.github/workflows/release.yaml@v2.0.{X}` → `@v2.0.{X+1}`
 3. Tag orchestrator patch, bump consumer wrappers
 

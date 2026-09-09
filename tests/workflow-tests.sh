@@ -163,7 +163,10 @@ d = yaml.safe_load(open(\".github/workflows/release.yaml\"))
 uses = [s[\"uses\"] for s in d[\"jobs\"][\"$STAGE\"][\"steps\"] if isinstance(s,dict) and \"publish-apple-kmp/\" in str(s.get(\"uses\",\"\"))]
 # Extract the sub-action paths (without version tag)
 got_paths = set(u.split(\"@\")[0].split(\"/\")[-1] for u in uses)
+# stage-1 signs the Mac build through macos-signing (Fastlane Match, 967a6be) —
+# there is no mac-testflight-internal step any more. Other stages keep the ios/mac pair.
 expected = set([\"ios-$SUFFIX\", \"mac-$SUFFIX\"])
+if \"$STAGE\" == \"stage-1-testflight-internal\": expected = set([\"ios-$SUFFIX\", \"macos-signing\"])
 assert got_paths == expected, \"got: \" + str(got_paths) + \", want: \" + str(expected)
 '"
 done
@@ -397,12 +400,10 @@ import yaml, os, sys
 # comments + project README). When these are addressed, remove the entries
 # below; the test will then catch any future regressions.
 KNOWN_GAPS = {
-    (\"stage-1-testflight-internal\", \"mac-testflight-internal\", \"MISSING\"): [
-        \"bundle_identifier\", \"keychain_password\",
-        \"mac_installer_certificate\", \"mac_installer_certificate_password\",
-        \"mac_provisioning_profile_base64\",
-        \"mac_signing_certificate\", \"mac_signing_certificate_password\",
-    ],
+    # stage-1s mac-testflight-internal entry is gone: 967a6be replaced that step with
+    # macos-signing (Fastlane Match), which removed the manual-certificate inputs the
+    # allowlist was covering. The gate itself demands stale entries be cleared, so it
+    # caught the over-allowlisting the moment the step disappeared.
     (\"stage-2-promote-to-external-beta\", \"mac-promote-to-testflight-external\", \"MISSING\"): [\"bundle_identifier\"],
     (\"stage-3-promote-to-app-store\", \"mac-promote-to-app-store\", \"MISSING\"): [\"bundle_identifier\"],
 }

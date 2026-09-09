@@ -12,7 +12,7 @@ Shared helpers live under [`_shared/scripts/`](./_shared/scripts/). The orchestr
 
 ## Development workflow
 
-1. **Branch from `main`**: `git checkout -b feat/<short-description>` or `fix/<short-description>`
+1. **Branch from `dev`**: `git checkout -b feat/<short-description>` or `fix/<short-description>`
 2. **Local validation** before pushing:
    ```bash
    # action.yaml YAML syntax
@@ -21,7 +21,7 @@ Shared helpers live under [`_shared/scripts/`](./_shared/scripts/). The orchestr
    shellcheck -S warning _shared/scripts/*.sh
    ```
 3. **PR Check CI** auto-validates: actionlint, per-sub-action YAML + README presence, shellcheck.
-4. Open PR against `main`. CI must pass before merge.
+4. Open PR against `dev`. CI must pass before merge.
 
 ## Adding a new sub-action
 
