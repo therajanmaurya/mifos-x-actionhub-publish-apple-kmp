@@ -142,7 +142,7 @@ jobs:
     if: ${{ inputs.platform == 'ios' }}
     runs-on: ${{ fromJSON(inputs.runner_pool) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Pre-fastlane setup (consumer-provided, pre-materialized mode)
         if: ${{ inputs.mode == 'pre-materialized' && inputs.pre_fastlane_script != '' }}
         shell: bash
@@ -203,7 +203,7 @@ jobs:
       FLAVOR:                ${{ inputs.flavor || 'prod' }}
       BUILD_TYPE:            ${{ inputs.build_type }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Pre-fastlane setup (consumer-provided, pre-materialized mode)
         if: ${{ inputs.mode == 'pre-materialized' && inputs.pre_fastlane_script != '' }}
@@ -232,7 +232,7 @@ jobs:
 
       - name: Upload IPA as release asset (iOS)
         if: ${{ always() && inputs.platform == 'ios' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-asset-ios-ipa
           path: '**/*.ipa'
@@ -279,7 +279,7 @@ jobs:
 
       - name: Upload PKG as release asset (macOS)
         if: ${{ always() && inputs.platform == 'mac' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-asset-mac-pkg
           path: '**/*.pkg'
@@ -298,7 +298,7 @@ jobs:
       FLAVOR:     ${{ inputs.flavor || 'prod' }}
       BUILD_TYPE: ${{ inputs.build_type }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Promote iOS TF Internal → External
         if: inputs.platform == 'ios'
         uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-testflight-external@v2.0.23
@@ -335,7 +335,7 @@ jobs:
       FLAVOR:     ${{ inputs.flavor || 'prod' }}
       BUILD_TYPE: ${{ inputs.build_type }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Promote iOS TF → App Store
         if: inputs.platform == 'ios'
         uses: therajanmaurya/mifos-x-actionhub-publish-apple-kmp/ios-promote-to-app-store@v2.0.23

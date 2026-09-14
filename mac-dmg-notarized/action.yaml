@@ -30,10 +30,10 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - uses: actions/setup-java@v4
+    - uses: actions/setup-java@v5
       with: { distribution: zulu, java-version: '${{ inputs.java-version }}' }
 
-    - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f  # v1.232.0
+    - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b  # v1.232.0
       with: { bundler-cache: true }
 
     - name: Materialize Apple secrets (Match SSH + ASC API key)

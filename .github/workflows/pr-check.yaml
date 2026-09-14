@@ -13,7 +13,7 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker://rhysd/actionlint:1.7.4
         with:
           args: -color
@@ -38,7 +38,7 @@ jobs:
           - mac-dmg-notarized
           - mac-dmg-unsigned
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: |
           set -euo pipefail
           test -f "${{ matrix.subdir }}/action.yaml" || { echo "::error::Missing action.yaml"; exit 1; }
@@ -48,7 +48,7 @@ jobs:
   validate-shared:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: find _shared/scripts -name '*.sh' -exec shellcheck -S warning {} +
       # Ruby syntax checked locally before push; rubocop in CI requires sudo
 
@@ -56,7 +56,7 @@ jobs:
     name: Workflow E2E tests (82 assertions)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install actionlint
         run: |
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.4
