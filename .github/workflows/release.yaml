@@ -59,10 +59,10 @@ on:
         type: string
         default: ''
       runner_pool:
-        description: 'JSON array of runner labels for ALL jobs. Default `["macos-14"]` (hosted Mac — required for Xcode). Pass `["self-hosted","macOS"]` to dispatch on a self-hosted Mac runner.'
+        description: 'JSON array of runner labels for ALL jobs. Default `["macos-15"]` (hosted Mac — required for Xcode). Pass `["self-hosted","macOS"]` to dispatch on a self-hosted Mac runner.'
         required: false
         type: string
-        default: '["macos-14"]'
+        default: '["macos-15"]'
       # ── Unified parameterized lanes (Phase 2, 2026-07) ─────────────────────────────
       # Consumer's Fastfile exposes `deployIpaOnFirebase(flavor:, build_type:)`,
       # `beta(flavor:, build_type:)`, `release(flavor:, build_type:)` — the consumer's
