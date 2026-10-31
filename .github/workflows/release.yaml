@@ -62,7 +62,7 @@ on:
         description: 'JSON array of runner labels for ALL jobs. Default `["macos-15"]` (hosted Mac — required for Xcode). Pass `["self-hosted","macOS"]` to dispatch on a self-hosted Mac runner.'
         required: false
         type: string
-        default: '["macos-15"]'
+        default: ''
       # ── Unified parameterized lanes (Phase 2, 2026-07) ─────────────────────────────
       # Consumer's Fastfile exposes `deployIpaOnFirebase(flavor:, build_type:)`,
       # `beta(flavor:, build_type:)`, `release(flavor:, build_type:)` — the consumer's
@@ -107,7 +107,7 @@ jobs:
   # skipped (mirrors publish-android v2.0.16; "always verify, never skip" mandate, 2026-06-22).
   validate-secrets:
     name: Preflight · Secrets
-    runs-on: ${{ fromJSON(inputs.runner_pool) }}
+    runs-on: ${{ fromJSON(inputs.runner_pool || format('["{0}"]', vars.CI_RUNNER_MAC || 'macos-15')) }}
     steps:
       - name: Check apple/match secrets
         env:
@@ -140,7 +140,7 @@ jobs:
   validate-store-listing:
     name: Preflight · Listing
     if: ${{ inputs.platform == 'ios' }}
-    runs-on: ${{ fromJSON(inputs.runner_pool) }}
+    runs-on: ${{ fromJSON(inputs.runner_pool || format('["{0}"]', vars.CI_RUNNER_MAC || 'macos-15')) }}
     steps:
       - uses: actions/checkout@v5
       - name: Pre-fastlane setup (consumer-provided, pre-materialized mode)
@@ -185,7 +185,7 @@ jobs:
     # validate-store-listing skips for mac (iOS-only); stage-1's always() handles the skip.
     needs: [validate-secrets, validate-store-listing]
     if: ${{ always() && !failure() && !cancelled() && contains(fromJSON('["internal","beta","production"]'), inputs.starting_rung) }}
-    runs-on: ${{ fromJSON(inputs.runner_pool) }}
+    runs-on: ${{ fromJSON(inputs.runner_pool || format('["{0}"]', vars.CI_RUNNER_MAC || 'macos-15')) }}
     environment: ${{ inputs.platform }}-testflight-internal
     env:
       SOPS_AGE_KEY:          ${{ secrets.SOPS_AGE_KEY }}
@@ -289,7 +289,7 @@ jobs:
     name: Stage 2 · TF External
     needs: [stage-1-testflight-internal]
     if: contains(fromJSON('["beta","production"]'), inputs.starting_rung) && !cancelled() && !failure()
-    runs-on: ${{ fromJSON(inputs.runner_pool) }}
+    runs-on: ${{ fromJSON(inputs.runner_pool || format('["{0}"]', vars.CI_RUNNER_MAC || 'macos-15')) }}
     environment: ${{ inputs.platform }}-testflight-external
     env:
       # Phase-2 unified-lane params — the `beta(flavor:, build_type:)` lane on the
@@ -326,7 +326,7 @@ jobs:
     name: Stage 3 · App Store
     needs: [stage-2-promote-to-external-beta]
     if: inputs.starting_rung == 'production' && !cancelled() && !failure()
-    runs-on: ${{ fromJSON(inputs.runner_pool) }}
+    runs-on: ${{ fromJSON(inputs.runner_pool || format('["{0}"]', vars.CI_RUNNER_MAC || 'macos-15')) }}
     environment: ${{ inputs.platform }}-app-store
     env:
       # Phase-2 unified-lane params — the `release(flavor:, build_type:)` lane on the
